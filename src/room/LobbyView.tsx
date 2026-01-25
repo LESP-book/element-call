@@ -228,7 +228,7 @@ export const LobbyView: FC<Props> = ({
         </div>
         <div className={inCallStyles.footer}>
           {recentsButtonInFooter && recentsButton}
-          <div className={inCallStyles.buttons}>
+          <div className={inCallStyles.toolbar}>
             <MicButton
               muted={!audioEnabled}
               onClick={toggleAudio ?? undefined}

@@ -6,6 +6,7 @@ Please see LICENSE in the repository root for full details.
 */
 
 .inRoom {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -35,69 +36,61 @@ Please see LICENSE in the repository root for full details.
   position: sticky;
   inset-block-end: 0;
   z-index: var(--call-view-header-footer-layer);
-  display: grid;
-  grid-template-columns:
-    minmax(0, var(--inline-content-inset))
-    1fr auto 1fr minmax(0, var(--inline-content-inset));
-  grid-template-areas: ". logo buttons layout .";
+  display: flex;
+  justify-content: center;
   align-items: center;
-  gap: var(--cpd-space-3x);
-  padding-block: var(--cpd-space-10x);
-  background: linear-gradient(
-    180deg,
-    rgba(0, 0, 0, 0) 0%,
-    var(--cpd-color-bg-canvas-default) 100%
-  );
+  padding-block: var(--cpd-space-6x);
+  pointer-events: none;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.2s ease-in-out,
+    transform 0.2s ease-in-out;
 }
 
-.footer.hidden {
-  display: none;
+.footer > * {
+  pointer-events: auto;
 }
 
 .footer.overlay {
   position: absolute;
-  inset-block-end: 0;
   inset-inline: 0;
-  opacity: 1;
-  transition: opacity 0.15s;
 }
 
-.footer.overlay.hidden {
-  display: grid;
+.footer.hidden {
   opacity: 0;
+  transform: translateY(100%);
 }
 
-.footer.overlay:has(:focus-visible) {
+.footer.hidden:has(:focus-visible) {
   opacity: 1;
-  pointer-events: initial;
+  transform: translateY(0);
 }
 
 .logo {
-  grid-area: logo;
-  justify-self: start;
+  position: absolute;
+  left: var(--cpd-space-4x);
   display: flex;
   align-items: center;
   gap: var(--cpd-space-2x);
-  padding-inline-start: var(--cpd-space-1x);
 }
 
-.buttons {
-  grid-area: buttons;
-  justify-self: center;
+.toolbar {
   display: flex;
-  gap: var(--cpd-space-3x);
+  align-items: center;
+  gap: var(--cpd-space-2x);
+  background-color: var(--cpd-color-bg-subtle-secondary);
+  border: 1px solid var(--cpd-color-border-interactive-secondary);
+  border-radius: 999px;
+  padding: var(--cpd-space-2x) var(--cpd-space-3x);
+  box-shadow: var(--cpd-shadow-xl);
 }
 
 .layout {
-  grid-area: layout;
   justify-self: end;
 }
 
 @media (max-width: 660px) {
-  .footer {
-    grid-template-areas: ". buttons buttons buttons .";
-  }
-
   .logo {
     display: none;
   }

@@ -15,6 +15,7 @@ import {
 } from "livekit-client";
 import { type Room as MatrixRoom } from "matrix-js-sdk";
 import {
+  BehaviorSubject,
   catchError,
   combineLatest,
   distinctUntilChanged,
@@ -74,7 +75,6 @@ import {
   playReactionsSound,
   showReactions,
 } from "../../settings/settings";
-import { isFirefox } from "../../Platform";
 import { setPipEnabled$ } from "../../controls";
 import { TileStore } from "../TileStore";
 import { gridLikeLayout } from "../GridLikeLayout";
@@ -357,6 +357,14 @@ export interface CallViewModel {
   // header/footer visibility
   showHeader$: Behavior<boolean>;
   showFooter$: Behavior<boolean>;
+  /**
+   * Whether the user has pinned the header to be always visible.
+   */
+  headerPinned$: Behavior<boolean>;
+  /**
+   * Toggle the header pinned state.
+   */
+  toggleHeaderPinned: () => void;
 
   // audio routing
   /**
@@ -879,12 +887,13 @@ export function createCallViewModel$(
           }),
         );
 
-  const leave$: Observable<"user" | "timeout" | "decline" | "allOthersLeft" | "terminated"> =
-    merge(
-      autoLeave$,
-      merge(userHangup$, widgetHangup$).pipe(map(() => "user" as const)),
-      termination$.pipe(map(() => "terminated" as const)),
-    ).pipe(scope.share);
+  const leave$: Observable<
+    "user" | "timeout" | "decline" | "allOthersLeft" | "terminated"
+  > = merge(
+    autoLeave$,
+    merge(userHangup$, widgetHangup$).pipe(map(() => "user" as const)),
+    termination$.pipe(map(() => "terminated" as const)),
+  ).pipe(scope.share);
 
   const spotlightSpeaker$ = scope.behavior<UserMediaViewModel | null>(
     userMedia$.pipe(
@@ -1285,8 +1294,19 @@ export function createCallViewModel$(
   const screenHover$ = new Subject<void>();
   const screenUnhover$ = new Subject<void>();
 
+  // User-controlled header pinned state (default: true = visible)
+  const headerPinnedSubject$ = new BehaviorSubject<boolean>(true);
+  const headerPinned$ = scope.behavior<boolean>(headerPinnedSubject$);
+  const toggleHeaderPinned = (): void => {
+    headerPinnedSubject$.next(!headerPinnedSubject$.value);
+  };
+
+  // Header is shown when: not in pip/flat mode AND user has pinned it
   const showHeader$ = scope.behavior<boolean>(
-    windowMode$.pipe(map((mode) => mode !== "pip" && mode !== "flat")),
+    combineLatest([
+      windowMode$.pipe(map((mode) => mode !== "pip" && mode !== "flat")),
+      headerPinned$,
+    ]).pipe(map(([autoShow, pinned]) => autoShow && pinned)),
   );
 
   const showFooter$ = scope.behavior<boolean>(
@@ -1297,12 +1317,7 @@ export function createCallViewModel$(
             return of(false);
           case "normal":
           case "narrow":
-            return of(true);
           case "flat":
-            // Sadly Firefox has some layering glitches that prevent the footer
-            // from appearing properly. They happen less often if we never hide
-            // the footer.
-            if (isFirefox()) return of(true);
             // Show/hide the footer in response to interactions
             return merge(
               screenTap$.pipe(map(() => "tap screen" as const)),
@@ -1517,7 +1532,7 @@ export function createCallViewModel$(
       };
       await client.sendEvent(
         matrixRoom.roomId,
-        ElementCallTerminateEventType as any,
+        ElementCallTerminateEventType,
         content,
       );
       // Also trigger local hangup
@@ -1583,6 +1598,8 @@ export function createCallViewModel$(
     showSpeakingIndicators$: showSpeakingIndicators$,
     showHeader$: showHeader$,
     showFooter$: showFooter$,
+    headerPinned$: headerPinned$,
+    toggleHeaderPinned: toggleHeaderPinned,
     earpieceMode$: earpieceMode$,
     audioOutputSwitcher$: audioOutputSwitcher$,
     reconnecting$: localMembership.reconnecting$,

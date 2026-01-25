@@ -1,0 +1,46 @@
+/*
+Copyright 2026 New Vector Ltd.
+
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
+*/
+
+.container {
+  position: absolute;
+  top: var(--cpd-space-3x);
+  right: var(--cpd-space-3x);
+  z-index: var(--call-view-header-footer-layer);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: calc(var(--cpd-space-8x) + var(--cpd-space-2x));
+  block-size: calc(var(--cpd-space-8x) + var(--cpd-space-2x));
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.container:focus-within {
+  opacity: 1;
+}
+
+@media (hover: hover) {
+  .container:hover {
+    opacity: 1;
+  }
+}
+
+@media (hover: none) {
+  .container {
+    opacity: 1;
+  }
+}
+
+.button {
+  background-color: var(--cpd-color-bg-canvas-default);
+  border-radius: var(--cpd-radius-pill-effect);
+  box-shadow: var(--cpd-shadow-button-sm);
+}
+
+.button:hover {
+  background-color: var(--cpd-color-bg-subtle-secondary);
+}
