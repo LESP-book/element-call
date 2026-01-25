@@ -9,11 +9,16 @@ import {
   type ElementCallReactionEventType,
   type ECallReactionEventContent,
 } from "../reactions";
+import {
+  type CallTerminateEventContent,
+  type ElementCallTerminateEventType,
+} from "../callTermination";
 
 // Extend Matrix JS SDK types via Typescript declaration merging to support unspecced event fields and types
 declare module "matrix-js-sdk/lib/types" {
   export interface TimelineEvents {
     [ElementCallReactionEventType]: ECallReactionEventContent;
+    [ElementCallTerminateEventType]: CallTerminateEventContent;
   }
 
   export interface AccountDataEvents {

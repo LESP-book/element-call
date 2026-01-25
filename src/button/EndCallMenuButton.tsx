@@ -15,7 +15,12 @@ import {
 } from "react";
 import classNames from "classnames";
 import { useTranslation } from "react-i18next";
-import { Menu, MenuItem, Button as CpdButton, Tooltip } from "@vector-im/compound-web";
+import {
+  Menu,
+  MenuItem,
+  Button as CpdButton,
+  Tooltip,
+} from "@vector-im/compound-web";
 import {
   EndCallIcon,
   LeaveIcon,
@@ -25,8 +30,10 @@ import styles from "./EndCallMenuButton.module.css";
 
 const CONFIRMATION_TIMEOUT_MS = 3000;
 
-interface EndCallMenuButtonProps
-  extends Omit<ComponentPropsWithoutRef<"button">, "onClick"> {
+interface EndCallMenuButtonProps extends Omit<
+  ComponentPropsWithoutRef<"button">,
+  "onClick"
+> {
   /**
    * Callback to leave the call (only for yourself).
    */
@@ -88,7 +95,7 @@ export const EndCallMenuButton: FC<EndCallMenuButtonProps> = ({
       setConfirming(false);
     }, CONFIRMATION_TIMEOUT_MS);
 
-    return () => clearTimeout(timeout);
+    return (): void => clearTimeout(timeout);
   }, [confirming]);
 
   // Reset confirming state when menu closes
@@ -103,18 +110,21 @@ export const EndCallMenuButton: FC<EndCallMenuButtonProps> = ({
     onLeave();
   }, [onLeave]);
 
-  const handleTerminate = useCallback((e: Event) => {
-    if (confirming) {
-      // Second click - actually terminate
-      onTerminate();
-      setConfirming(false);
-      setOpen(false);
-    } else {
-      // First click - enter confirming state
-      e.preventDefault();
-      setConfirming(true);
-    }
-  }, [confirming, onTerminate]);
+  const handleTerminate = useCallback(
+    (e: Event) => {
+      if (confirming) {
+        // Second click - actually terminate
+        onTerminate();
+        setConfirming(false);
+        setOpen(false);
+      } else {
+        // First click - enter confirming state
+        e.preventDefault();
+        setConfirming(true);
+      }
+    },
+    [confirming, onTerminate],
+  );
 
   const showTerminateOption = participantCount > 1;
   const tooltipLabel = t("hangup_button_label");

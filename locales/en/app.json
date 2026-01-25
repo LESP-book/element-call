@@ -142,6 +142,10 @@
   "end_call_menu_label": "End call options",
   "header_label": "Element Call Home",
   "header_participants_label": "Participants",
+  "header_toggle": {
+    "show": "Show header",
+    "hide": "Hide header"
+  },
   "terminate_call_button": "End for everyone",
   "terminate_call_confirm": "End call for {{count}} people?",
   "terminate_call_confirm_button": "End call",

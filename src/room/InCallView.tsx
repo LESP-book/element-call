@@ -31,10 +31,9 @@ import {
 } from "@vector-im/compound-design-tokens/assets/web/icons";
 import { useTranslation } from "react-i18next";
 
-import LogoMark from "../icons/LogoMark.svg?react";
-import LogoType from "../icons/LogoType.svg?react";
 import {
   EndCallMenuButton,
+  HeaderToggleButton,
   MicButton,
   VideoButton,
   ShareScreenButton,
@@ -84,11 +83,7 @@ import {
 import { ReactionsAudioRenderer } from "./ReactionAudioRenderer";
 import { ReactionsOverlay } from "./ReactionsOverlay";
 import { CallEventAudioRenderer } from "./CallEventAudioRenderer";
-import {
-  debugTileLayout as debugTileLayoutSetting,
-  matrixRTCMode as matrixRTCModeSetting,
-  useSetting,
-} from "../settings/settings";
+import { matrixRTCMode as matrixRTCModeSetting } from "../settings/settings";
 import { ReactionsReader } from "../reactions/ReactionsReader";
 import { CallTerminationReader } from "../callTermination/CallTerminationReader";
 import { LivekitRoomAudioRenderer } from "../livekit/MatrixAudioRenderer.tsx";
@@ -120,7 +115,13 @@ export interface ActiveCallProps extends Omit<
   e2eeSystem: EncryptionSystem;
   // TODO refactor those reasons into an enum
   onLeft: (
-    reason: "user" | "timeout" | "decline" | "allOthersLeft" | "terminated" | "error",
+    reason:
+      | "user"
+      | "timeout"
+      | "decline"
+      | "allOthersLeft"
+      | "terminated"
+      | "error",
   ) => void;
 }
 
@@ -271,11 +272,10 @@ export const InCallView: FC<InCallViewProps> = ({
   const reconnecting = useBehavior(vm.reconnecting$);
   const windowMode = useBehavior(vm.windowMode$);
   const layout = useBehavior(vm.layout$);
-  const tileStoreGeneration = useBehavior(vm.tileStoreGeneration$);
-  const [debugTileLayout] = useSetting(debugTileLayoutSetting);
   const gridMode = useBehavior(vm.gridMode$);
   const showHeader = useBehavior(vm.showHeader$);
   const showFooter = useBehavior(vm.showFooter$);
+  const headerPinned = useBehavior(vm.headerPinned$);
   const earpieceMode = useBehavior(vm.earpieceMode$);
   const audioOutputSwitcher = useBehavior(vm.audioOutputSwitcher$);
   const sharingScreen = useBehavior(vm.sharingScreen$);
@@ -408,21 +408,19 @@ export const InCallView: FC<InCallViewProps> = ({
   const [headerRef, headerBounds] = useMeasure();
   const [footerRef, footerBounds] = useMeasure();
 
+  const footerShouldReserveSpace = false;
+
+  const footerHeight =
+    footerShouldReserveSpace && typeof footerBounds.height === "number"
+      ? footerBounds.height
+      : 0;
+
   const gridBounds = useMemo(
     () => ({
       width: bounds.width,
-      height:
-        bounds.height -
-        headerBounds.height -
-        (windowMode === "flat" ? 0 : footerBounds.height),
+      height: bounds.height - headerBounds.height - footerHeight,
     }),
-    [
-      bounds.width,
-      bounds.height,
-      headerBounds.height,
-      footerBounds.height,
-      windowMode,
-    ],
+    [bounds.width, bounds.height, headerBounds.height, footerHeight],
   );
   const gridBoundsObservable$ = useObservable(
     (inputs$) => inputs$.pipe(map(([gridBounds]) => gridBounds)),
@@ -733,33 +731,21 @@ export const InCallView: FC<InCallViewProps> = ({
     <div
       ref={footerRef}
       className={classNames(styles.footer, {
-        [styles.overlay]: windowMode === "flat",
+        [styles.overlay]: true,
         [styles.hidden]:
           !showFooter || (!showControls && headerStyle === "none"),
       })}
     >
-      {headerStyle !== "none" && (
-        <div className={styles.logo}>
-          <LogoMark width={24} height={24} aria-hidden />
-          <LogoType
-            width={80}
-            height={11}
-            aria-label={import.meta.env.VITE_PRODUCT_NAME || "Element Call"}
-          />
-          {/* Don't mind this odd placement, it's just a little debug label */}
-          {debugTileLayout
-            ? `Tiles generation: ${tileStoreGeneration}`
-            : undefined}
-        </div>
-      )}
-      {showControls && <div className={styles.buttons}>{buttons}</div>}
       {showControls && (
-        <LayoutToggle
-          className={styles.layout}
-          layout={gridMode}
-          setLayout={setGridMode}
-          onTouchEnd={onControlsTouchEnd}
-        />
+        <div className={styles.toolbar}>
+          {buttons}
+          <LayoutToggle
+            className={styles.layout}
+            layout={gridMode}
+            setLayout={setGridMode}
+            onTouchEnd={onControlsTouchEnd}
+          />
+        </div>
       )}
     </div>
   );
@@ -777,6 +763,16 @@ export const InCallView: FC<InCallViewProps> = ({
       onPointerOut={onPointerOut}
     >
       {header}
+      {/* Header toggle button - only show in standard mode, not in pip/flat */}
+      {widget === null &&
+        headerStyle === "standard" &&
+        windowMode !== "pip" &&
+        windowMode !== "flat" && (
+          <HeaderToggleButton
+            headerPinned={headerPinned}
+            onToggle={vm.toggleHeaderPinned}
+          />
+        )}
       {audioParticipants.map(({ livekitRoom, url, participants }) => (
         <LivekitRoomAudioRenderer
           key={url}
