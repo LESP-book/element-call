@@ -11,8 +11,7 @@ Please see LICENSE in the repository root for full details.
   flex-direction: column;
   height: 100%;
   width: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .header {
@@ -148,6 +147,8 @@ Please see LICENSE in the repository root for full details.
   flex-grow: 1;
   inline-size: 100%;
   align-self: center;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .fixedGrid,

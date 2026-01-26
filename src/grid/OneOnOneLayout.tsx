@@ -49,12 +49,21 @@ export const makeOneOnOneLayout: CallLayout<OneOnOneLayoutModel> = ({
     );
 
     return (
-      <div ref={ref} className={styles.layer}>
+      <div
+        ref={ref}
+        className={styles.layer}
+        style={{ width: "100%", height: "100%", overflow: "hidden" }}
+      >
         <Slot
           id={model.remote.id}
           model={model.remote}
           className={styles.container}
-          style={{ width: tileWidth, height: tileHeight }}
+          style={{
+            width: tileWidth,
+            height: tileHeight,
+            maxWidth: "100%",
+            maxHeight: "100%",
+          }}
         >
           <Slot
             className={classNames(styles.slot, styles.local)}
