@@ -151,8 +151,15 @@ const SpotlightItem: FC<SpotlightItemProps> = ({
   const focusUrl = useBehavior(vm.focusUrl$);
   const displayName = useBehavior(vm.displayName$);
   const mxcAvatarUrl = useBehavior(vm.mxcAvatarUrl$);
-  const video = useBehavior(vm.video$);
-  const videoEnabled = useBehavior(vm.videoEnabled$);
+  // For UserMediaViewModel, use activeVideo$ which supports switching between camera and screen share
+  // For ScreenShareViewModel, use the regular video$
+  const isUserMedia = !(vm instanceof ScreenShareViewModel);
+  const video = useBehavior(
+    isUserMedia ? (vm as UserMediaViewModel).activeVideo$ : vm.video$,
+  );
+  const videoEnabled = useBehavior(
+    isUserMedia ? (vm as UserMediaViewModel).activeVideoEnabled$ : vm.videoEnabled$,
+  );
   const unencryptedWarning = useBehavior(vm.unencryptedWarning$);
   const encryptionStatus = useBehavior(vm.encryptionStatus$);
 

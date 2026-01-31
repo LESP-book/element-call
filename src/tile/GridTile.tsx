@@ -29,6 +29,8 @@ import {
   ExpandIcon,
   VolumeOffSolidIcon,
   SwitchCameraSolidIcon,
+  ShareScreenIcon,
+  VideoCallIcon,
 } from "@vector-im/compound-design-tokens/assets/web/icons";
 import {
   ContextMenu,
@@ -93,7 +95,10 @@ const UserMediaTile: FC<UserMediaTileProps> = ({
 }) => {
   const { toggleRaisedHand } = useReactionsSender();
   const { t } = useTranslation();
-  const video = useBehavior(vm.video$);
+  // Use activeVideo$ for display, which switches between camera and screen share
+  const video = useBehavior(vm.activeVideo$);
+  const hasScreenShare = useBehavior(vm.hasScreenShare$);
+  const displaySource = useBehavior(vm.displaySource$);
   const unencryptedWarning = useBehavior(vm.unencryptedWarning$);
   const encryptionStatus = useBehavior(vm.encryptionStatus$);
   const audioStreamStats = useObservableEagerState<
@@ -103,7 +108,8 @@ const UserMediaTile: FC<UserMediaTileProps> = ({
     RTCInboundRtpStreamStats | RTCOutboundRtpStreamStats | undefined
   >(vm.videoStreamStats$);
   const audioEnabled = useBehavior(vm.audioEnabled$);
-  const videoEnabled = useBehavior(vm.videoEnabled$);
+  // Use activeVideoEnabled$ which respects the current display source
+  const videoEnabled = useBehavior(vm.activeVideoEnabled$);
   const speaking = useBehavior(vm.speaking$);
   const cropVideo = useBehavior(vm.cropVideo$);
   const onSelectFitContain = useCallback(
@@ -129,9 +135,28 @@ const UserMediaTile: FC<UserMediaTileProps> = ({
       : t("microphone_off");
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const onSelectDisplaySource = useCallback(
+    (e: Event) => {
+      e.preventDefault();
+      vm.toggleDisplaySource();
+    },
+    [vm],
+  );
   const menu = (
     <>
       {menuStart}
+      {hasScreenShare && (
+        <ToggleMenuItem
+          Icon={displaySource === "screen" ? VideoCallIcon : ShareScreenIcon}
+          label={
+            displaySource === "screen"
+              ? t("video_tile.switch_to_camera")
+              : t("video_tile.switch_to_screen")
+          }
+          checked={displaySource === "screen"}
+          onSelect={onSelectDisplaySource}
+        />
+      )}
       <ToggleMenuItem
         Icon={ExpandIcon}
         label={t("video_tile.change_fit_contain")}
@@ -147,6 +172,9 @@ const UserMediaTile: FC<UserMediaTileProps> = ({
     : undefined;
 
   const showSpeaking = showSpeakingIndicators && speaking;
+  // When showing screen share, always use "contain" fit mode
+  const effectiveVideoFit =
+    displaySource === "screen" ? "contain" : cropVideo ? "cover" : "contain";
 
   const tile = (
     <MediaView
@@ -156,10 +184,11 @@ const UserMediaTile: FC<UserMediaTileProps> = ({
       unencryptedWarning={unencryptedWarning}
       encryptionStatus={encryptionStatus}
       videoEnabled={videoEnabled}
-      videoFit={cropVideo ? "cover" : "contain"}
+      videoFit={effectiveVideoFit}
       className={classNames(className, styles.tile, {
         [styles.speaking]: showSpeaking,
         [styles.handRaised]: !showSpeaking && handRaised,
+        [styles.screenShare]: displaySource === "screen",
       })}
       nameTagLeadingIcon={
         <AudioIcon
