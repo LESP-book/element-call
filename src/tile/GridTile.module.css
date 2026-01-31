@@ -105,3 +105,17 @@ borders don't support gradients */
   background: var(--cpd-color-bg-subtle-primary);
   border-color: var(--cpd-color-border-interactive-hovered);
 }
+
+/* Screen share indicator - blue border when showing screen share */
+.tile.screenShare {
+  outline: var(--cpd-border-width-2) solid var(--cpd-color-icon-accent-tertiary);
+}
+
+.tile.screenShare::before {
+  background: linear-gradient(
+    119deg,
+    rgba(13, 92, 189, 0.5) 0%,
+    rgba(99, 120, 255, 0.5) 100%
+  );
+  opacity: 0.6;
+}

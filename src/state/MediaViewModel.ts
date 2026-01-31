@@ -360,6 +360,13 @@ export type UserMediaViewModel =
   | RemoteUserMediaViewModel;
 
 /**
+ * The display source type for user media tiles.
+ * - 'camera': Show the user's camera video
+ * - 'screen': Show the user's screen share video
+ */
+export type DisplaySource = "camera" | "screen";
+
+/**
  * Some participant's user media.
  */
 abstract class BaseUserMediaViewModel extends BaseMediaViewModel {
@@ -403,6 +410,43 @@ abstract class BaseUserMediaViewModel extends BaseMediaViewModel {
    */
   public readonly cropVideo$: Behavior<boolean> = this._cropVideo$;
 
+  /**
+   * The screen share video track reference for this participant.
+   */
+  public readonly screenVideo$: Behavior<TrackReference | undefined>;
+
+  /**
+   * Whether this participant has an active screen share.
+   */
+  public readonly hasScreenShare$: Behavior<boolean>;
+
+  /**
+   * The current display source for this participant's tile.
+   * - 'camera': Show the camera video
+   * - 'screen': Show the screen share video
+   */
+  private readonly _displaySource$ = new BehaviorSubject<DisplaySource>(
+    "camera",
+  );
+  public readonly displaySource$: Behavior<DisplaySource> = this._displaySource$;
+
+  /**
+   * The currently active video track based on the display source.
+   * Returns screen share track when displaySource is 'screen' and screen share is available,
+   * otherwise returns the camera track.
+   */
+  public readonly activeVideo$: Behavior<TrackReference | undefined>;
+
+  /**
+   * Whether the currently active video is enabled.
+   */
+  private readonly _activeVideoEnabled$: Behavior<boolean>;
+
+  /**
+   * Whether the screen share video is enabled.
+   */
+  private readonly _screenVideoEnabled$: Behavior<boolean>;
+
   public constructor(
     scope: ObservableScope,
     id: string,
@@ -443,10 +487,98 @@ abstract class BaseUserMediaViewModel extends BaseMediaViewModel {
     this._videoEnabled$ = this.scope.behavior(
       media$.pipe(map((m) => m?.cameraTrack?.isMuted === false)),
     );
+
+    // Screen share video track
+    this.screenVideo$ = this.scope.behavior(
+      participant$.pipe(
+        switchMap((p) =>
+          p ? observeTrackReference$(p, Track.Source.ScreenShare) : of(undefined),
+        ),
+      ),
+    );
+
+    // Whether screen share is available
+    this.hasScreenShare$ = this.scope.behavior(
+      this.screenVideo$.pipe(
+        map((track) => track?.publication !== undefined),
+      ),
+    );
+
+    // Screen share video enabled state
+    this._screenVideoEnabled$ = this.scope.behavior(
+      this.screenVideo$.pipe(
+        map((track) => track?.publication?.isMuted === false),
+      ),
+    );
+
+    // Active video track based on display source
+    this.activeVideo$ = this.scope.behavior(
+      combineLatest([this.displaySource$, this.video$, this.screenVideo$]).pipe(
+        map(([source, camera, screen]) => {
+          if (source === "screen" && screen?.publication) {
+            return screen;
+          }
+          return camera;
+        }),
+      ),
+    );
+
+    // Active video enabled state based on display source
+    this._activeVideoEnabled$ = this.scope.behavior(
+      combineLatest([
+        this.displaySource$,
+        this._videoEnabled$,
+        this._screenVideoEnabled$,
+      ]).pipe(
+        map(([source, cameraEnabled, screenEnabled]) => {
+          return source === "screen" ? screenEnabled : cameraEnabled;
+        }),
+      ),
+    );
+
+    // Auto-fallback to camera when screen share stops
+    this.hasScreenShare$
+      .pipe(
+        filter((has) => !has),
+        this.scope.bind(),
+      )
+      .subscribe(() => {
+        if (this._displaySource$.value === "screen") {
+          this._displaySource$.next("camera");
+        }
+      });
   }
 
   public toggleFitContain(): void {
     this._cropVideo$.next(!this._cropVideo$.value);
+  }
+
+  /**
+   * Toggle between camera and screen share display source.
+   * Only switches to screen if screen share is available.
+   */
+  public toggleDisplaySource(): void {
+    const current = this._displaySource$.value;
+    const next = current === "camera" ? "screen" : "camera";
+    // Only allow switching to screen if screen share is available
+    if (next === "screen" && !this.hasScreenShare$.value) return;
+    this._displaySource$.next(next);
+  }
+
+  /**
+   * Set the display source explicitly.
+   * Only switches to screen if screen share is available.
+   */
+  public setDisplaySource(source: DisplaySource): void {
+    if (source === "screen" && !this.hasScreenShare$.value) return;
+    this._displaySource$.next(source);
+  }
+
+  /**
+   * Get the active video enabled state based on current display source.
+   */
+  public get activeVideoEnabled$(): Behavior<boolean> {
+    return this._activeVideoEnabled$;
   }
 
   public get local(): boolean {
