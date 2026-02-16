@@ -8,7 +8,6 @@
   "livekit": {
     "livekit_service_url": "https://matrixrtc.redchat.uk"
   },
-  "app_prompt": false,
   "features": {
     "feature_use_device_session_member_events": true
   },
