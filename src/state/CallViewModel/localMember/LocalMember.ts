@@ -17,6 +17,7 @@ import { observeParticipantEvents } from "@livekit/components-core";
 import {
   Status as RTCSessionStatus,
   type LivekitTransport,
+  type LivekitTransportConfig,
   type MatrixRTCSession,
 } from "matrix-js-sdk/lib/matrixrtc";
 import {
@@ -61,7 +62,6 @@ import {
 } from "../remoteMembers/Connection.ts";
 import { type HomeserverConnected } from "./HomeserverConnected.ts";
 import { and$ } from "../../../utils/observable.ts";
-import { type LocalTransportWithSFUConfig } from "./LocalTransport.ts";
 
 export enum TransportState {
   /** Not even a transport is available to the LocalMembership */
@@ -125,9 +125,9 @@ interface Props {
   muteStates: MuteStates;
   connectionManager: IConnectionManager;
   createPublisherFactory: (connection: Connection) => Publisher;
-  joinMatrixRTC: (transport: LivekitTransport) => void;
+  joinMatrixRTC: (transport: LivekitTransportConfig) => void;
   homeserverConnected: HomeserverConnected;
-  localTransport$: Behavior<LocalTransportWithSFUConfig | null>;
+  localTransport$: Behavior<LivekitTransportConfig | null>;
   matrixRTCSession: Pick<
     MatrixRTCSession,
     "updateCallIntent" | "leaveRoomSession"
@@ -146,7 +146,7 @@ interface Props {
  * @param props.createPublisherFactory Factory to create a publisher once we have a connection.
  * @param props.joinMatrixRTC Callback to join the matrix RTC session once we have a transport.
  * @param props.homeserverConnected The homeserver connected state.
- * @param props.localTransport$ The local transport to use for publishing.
+ * @param props.localTransport$ The transport to advertise in our membership.
  * @param props.logger The logger to use.
  * @param props.muteStates The mute states for video and audio.
  * @param props.matrixRTCSession The matrix RTC session to join.
@@ -236,9 +236,7 @@ export const createLocalMembership$ = ({
           return null;
         }
 
-        return connectionData.getConnectionForTransport(
-          localTransport.transport,
-        );
+        return connectionData.getConnectionForTransport(localTransport);
       }),
       tap((connection) => {
         logger.info(
@@ -548,7 +546,7 @@ export const createLocalMembership$ = ({
       if (!shouldConnect) return;
 
       try {
-        joinMatrixRTC(transport.transport);
+        joinMatrixRTC(transport);
       } catch (error) {
         logger.error("Error entering RTC session", error);
         if (error instanceof Error)
@@ -717,7 +715,7 @@ interface EnterRTCSessionOptions {
 export function enterRTCSession(
   rtcSession: MatrixRTCSession,
   ownMembershipIdentity: CallMembershipIdentityParts,
-  transport: LivekitTransport,
+  transport: LivekitTransportConfig,
   options: EnterRTCSessionOptions,
 ): void {
   const { encryptMedia, matrixRTCMode } = options;
@@ -735,12 +733,26 @@ export function enterRTCSession(
   const multiSFU =
     matrixRTCMode === MatrixRTCMode.Compatibility ||
     matrixRTCMode === MatrixRTCMode.Matrix_2_0;
+
+  // For backwards compatibility with Element Call versions that do not do Matrix 2.0,
+  // we add the livekit alias to the transport.
+  let backwardCompatibleTransport: LivekitTransport | LivekitTransportConfig;
+  if (matrixRTCMode === MatrixRTCMode.Matrix_2_0) {
+    backwardCompatibleTransport = transport;
+  } else {
+    backwardCompatibleTransport = {
+      livekit_alias: rtcSession.room.roomId,
+      ...transport,
+    };
+  }
+
   // Multi-sfu does not need a preferred foci list. just the focus that is actually used.
   // TODO where/how do we track errors originating from the ongoing rtcSession?
+
   rtcSession.joinRTCSession(
     ownMembershipIdentity,
-    multiSFU ? [] : [transport],
-    multiSFU ? transport : undefined,
+    multiSFU ? [] : [backwardCompatibleTransport],
+    multiSFU ? backwardCompatibleTransport : undefined,
     {
       notificationType,
       callIntent,

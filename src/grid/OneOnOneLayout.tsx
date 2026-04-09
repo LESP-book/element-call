@@ -55,8 +55,8 @@ export const makeOneOnOneLayout: CallLayout<OneOnOneLayoutModel> = ({
         style={{ width: "100%", height: "100%", overflow: "hidden" }}
       >
         <Slot
-          id={model.remote.id}
-          model={model.remote}
+          id={model.spotlight.id}
+          model={model.spotlight}
           className={styles.container}
           style={{
             width: tileWidth,
@@ -67,8 +67,8 @@ export const makeOneOnOneLayout: CallLayout<OneOnOneLayoutModel> = ({
         >
           <Slot
             className={classNames(styles.slot, styles.local)}
-            id={model.local.id}
-            model={model.local}
+            id={model.pip.id}
+            model={model.pip}
             onDrag={onDragLocalTile}
             data-block-alignment={pipAlignmentValue.block}
             data-inline-alignment={pipAlignmentValue.inline}
