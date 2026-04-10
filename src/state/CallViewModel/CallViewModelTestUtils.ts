@@ -17,7 +17,7 @@ import {
 import { SyncState } from "matrix-js-sdk/lib/sync";
 import { BehaviorSubject, type Observable, map, of, NEVER } from "rxjs";
 import { onTestFinished, vi } from "vitest";
-import { ClientEvent, type MatrixClient } from "matrix-js-sdk";
+import { ClientEvent, type RoomMember, type MatrixClient } from "matrix-js-sdk";
 import EventEmitter from "events";
 import * as ComponentsCore from "@livekit/components-core";
 
@@ -64,15 +64,10 @@ const carol = local;
 
 const dave = mockMatrixRoomMember(daveRTLRtcMember, { rawDisplayName: "Dave" });
 
-const roomMembers = new Map(
-  [alice, aliceDoppelganger, bob, bobZeroWidthSpace, carol, dave, daveRTL].map(
-    (p) => [p.userId, p],
-  ),
-);
-
 export interface CallViewModelInputs {
   remoteParticipants$: Behavior<RemoteParticipant[]>;
   rtcMembers$: Behavior<Partial<CallMembership>[]>;
+  roomMembers: RoomMember[];
   livekitConnectionState$: Behavior<ConnectionState>;
   speaking: Map<Participant, Observable<boolean>>;
   mediaDevices: MediaDevices;
@@ -87,6 +82,15 @@ export function withCallViewModel(mode: MatrixRTCMode) {
     {
       remoteParticipants$ = constant([]),
       rtcMembers$ = constant([localRtcMember]),
+      roomMembers = [
+        alice,
+        aliceDoppelganger,
+        bob,
+        bobZeroWidthSpace,
+        carol,
+        dave,
+        daveRTL,
+      ],
       livekitConnectionState$: connectionState$ = constant(
         ConnectionState.Connected,
       ),
@@ -128,9 +132,12 @@ export function withCallViewModel(mode: MatrixRTCMode) {
         public getSyncState(): SyncState {
           return syncState;
         }
+        public getAccessToken(): string | null {
+          return "a-token";
+        }
       })() as Partial<MatrixClient> as MatrixClient,
-      getMembers: () => Array.from(roomMembers.values()),
-      getMembersWithMembership: () => Array.from(roomMembers.values()),
+      getMembers: () => roomMembers,
+      getMembersWithMembership: () => roomMembers,
     });
     const rtcSession = new MockRTCSession(room, []).withMemberships(
       rtcMembers$,
