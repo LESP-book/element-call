@@ -33,7 +33,10 @@ import {
   PublishState,
   TrackState,
 } from "./LocalMember";
-import { MatrixRTCTransportMissingError } from "../../../utils/errors";
+import {
+  ConnectionLostError,
+  MatrixRTCTransportMissingError,
+} from "../../../utils/errors";
 import { Epoch, ObservableScope } from "../../ObservableScope";
 import { constant } from "../../Behavior";
 import { ConnectionManagerData } from "../remoteMembers/ConnectionManager";
@@ -363,6 +366,55 @@ describe("LocalMembership", () => {
     // expect(publishers[1].stopTracks).toHaveBeenCalled();
 
     defaultCreateLocalMemberValues.createPublisherFactory.mockReset();
+  });
+
+  it("surfaces a connection lost error after a terminal livekit disconnect while joined", async () => {
+    const scope = new ObservableScope();
+
+    const localTransport$ = new BehaviorSubject(aTransport);
+    const connectionState$ = new BehaviorSubject(ConnectionState.LivekitConnected);
+    const connectionManagerData = new ConnectionManagerData();
+    connectionManagerData.add(
+      {
+        ...connectionTransportAConnected,
+        state$: connectionState$,
+      } as unknown as Connection,
+      [],
+    );
+
+    const createPublisherFactory = vi.fn().mockReturnValue({
+      createAndSetupTracks: vi.fn().mockResolvedValue(undefined),
+      startPublishing: vi.fn().mockResolvedValue(undefined),
+      stopPublishing: vi.fn().mockResolvedValue(undefined),
+      destroy: vi.fn().mockResolvedValue(undefined),
+      shouldPublish: false,
+    });
+
+    const localMembership = createLocalMembership$({
+      scope,
+      ...defaultCreateLocalMemberValues,
+      createPublisherFactory,
+      connectionManager: {
+        connectionManagerData$: constant(new Epoch(connectionManagerData)),
+      },
+      localTransport$,
+    });
+
+    localMembership.requestJoinAndPublish();
+    await flushPromises();
+
+    connectionState$.next(ConnectionState.LivekitDisconnected);
+    await flushPromises();
+
+    expect(localMembership.localMemberState$.value).toStrictEqual({
+      matrix: RTCMemberStatus.Connected,
+      media: {
+        connection: new ConnectionLostError(),
+        tracks: TrackState.Ready,
+      },
+    });
+
+    scope.end();
   });
 
   it("only start tracks if requested", async () => {
