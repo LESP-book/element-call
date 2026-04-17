@@ -31,6 +31,7 @@ import {
   type Observable,
   of,
   pairwise,
+  scan,
   startWith,
   switchMap,
   tap,
@@ -45,6 +46,7 @@ import { type ObservableScope } from "../../ObservableScope.ts";
 import { type Publisher } from "./Publisher.ts";
 import { type MuteStates } from "../../MuteStates.ts";
 import {
+  ConnectionLostError,
   ElementCallError,
   FailToStartLivekitConnection,
   MembershipManagerError,
@@ -94,7 +96,7 @@ export enum TrackState {
 export type LocalMemberMediaState =
   | {
       tracks: TrackState;
-      connection: ConnectionState | FailedToStartError;
+      connection: ConnectionState | FailedToStartError | ElementCallError | null;
     }
   | PublishState
   | ElementCallError;
@@ -395,9 +397,47 @@ export const createLocalMembership$ = ({
     switchMap((connection) => (connection ? connection.state$ : of(null))),
   );
 
+  const effectiveLocalConnectionState$ = scope.behavior<
+    ConnectionState | Error | null
+  >(
+    combineLatest([localConnectionState$, joinAndPublishRequested$]).pipe(
+      scan(
+        (previous, [localConnectionState, shouldJoinAndPublish]) => {
+          const hadConnectedPreviously =
+            previous.hadConnectedPreviously ||
+            localConnectionState === ConnectionState.LivekitConnected ||
+            localConnectionState === ConnectionState.LivekitReconnecting ||
+            localConnectionState === ConnectionState.LivekitSignalReconnecting;
+
+          if (
+            shouldJoinAndPublish &&
+            hadConnectedPreviously &&
+            localConnectionState === ConnectionState.LivekitDisconnected
+          ) {
+            return {
+              hadConnectedPreviously,
+              state: new ConnectionLostError(),
+            };
+          }
+
+          return {
+            hadConnectedPreviously,
+            state: localConnectionState,
+          };
+        },
+        {
+          hadConnectedPreviously: false,
+          state: null as ConnectionState | Error | null,
+        },
+      ),
+      map(({ state }) => state),
+    ),
+    null,
+  );
+
   const mediaState$: Behavior<LocalMemberMediaState> = scope.behavior(
     combineLatest([
-      localConnectionState$,
+      effectiveLocalConnectionState$,
       localTransport$,
       joinAndPublishRequested$,
       from(trackStartRequested.promise).pipe(

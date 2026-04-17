@@ -11,6 +11,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { type MatrixClient, JoinRule, type Room } from "matrix-js-sdk";
@@ -80,6 +81,7 @@ import { useBehavior } from "../useBehavior.ts";
  * the user.
  */
 export const MUTE_PARTICIPANT_COUNT = 8;
+const AUTO_RECOVER_ATTEMPTS = 3;
 
 declare global {
   interface Window {
@@ -118,6 +120,9 @@ export const GroupCallView: FC<Props> = ({
   const [externalError, setExternalError] = useState<ElementCallError | null>(
     null,
   );
+  const [recoveryNonce, setRecoveryNonce] = useState(0);
+  const [pendingAutoReconnect, setPendingAutoReconnect] = useState(false);
+  const automaticReconnectAttemptsRef = useRef(0);
   const memberships = useMatrixRTCSessionMemberships(rtcSession);
 
   const muteAllAudio = useBehavior(muteAllAudio$);
@@ -158,6 +163,9 @@ export const GroupCallView: FC<Props> = ({
       delete window.rtcSession;
     };
   }, [rtcSession]);
+
+  // TODO refactor this + "joined" to just one callState
+  const [left, setLeft] = useState(false);
 
   // TODO move this into the callViewModel LocalMembership.ts
   // We might actually not need this at all. Since we get into fatalError on those errors already?
@@ -237,6 +245,21 @@ export const GroupCallView: FC<Props> = ({
     [setJoined],
   );
 
+  const recoverCall = useCallback(async (): Promise<void> => {
+    setExternalError(null);
+    setLeft(false);
+    setRecoveryNonce((value) => value + 1);
+    await enterRTCSessionOrError(rtcSession).catch((e) => {
+      logger.error("Error re-entering RTC session", e);
+    });
+  }, [enterRTCSessionOrError, rtcSession]);
+
+  useEffect(() => {
+    if (!pendingAutoReconnect) return;
+    setPendingAutoReconnect(false);
+    void recoverCall();
+  }, [pendingAutoReconnect, recoverCall]);
+
   useEffect(() => {
     const defaultDeviceSetup = async ({
       audioInput,
@@ -308,9 +331,6 @@ export const GroupCallView: FC<Props> = ({
     latestMuteStates,
     setJoined,
   ]);
-
-  // TODO refactor this + "joined" to just one callState
-  const [left, setLeft] = useState(false);
 
   const navigate = useNavigate();
 
@@ -513,21 +533,24 @@ export const GroupCallView: FC<Props> = ({
 
   return (
     <GroupCallErrorBoundary
+      key={recoveryNonce}
       widget={widget}
       recoveryActionHandler={async (action) => {
-        setExternalError(null);
         if (action == "reconnect") {
-          setLeft(false);
-          await enterRTCSessionOrError(rtcSession).catch((e) => {
-            logger.error("Error re-entering RTC session", e);
-          });
+          await recoverCall();
         }
       }}
-      onError={
-        (/**error*/) => {
-          if (rtcSession.isJoined()) onLeft("error");
+      onError={(error) => {
+        if (
+          error instanceof ConnectionLostError &&
+          automaticReconnectAttemptsRef.current < AUTO_RECOVER_ATTEMPTS
+        ) {
+          automaticReconnectAttemptsRef.current += 1;
+          setPendingAutoReconnect(true);
+          return;
         }
-      }
+        if (rtcSession.isJoined()) onLeft("error");
+      }}
     >
       {body}
     </GroupCallErrorBoundary>

@@ -89,6 +89,7 @@ const leaveRTCSession = vi.hoisted(() =>
 let playSound: MockedFunction<
   NonNullable<ReturnType<typeof useAudioContext>>["playSound"]
 >;
+let activeCallInstanceSeed = 0;
 
 const localRtcMember = mockRtcMembership("@carol:example.org", "CCCC");
 const carol = mockMatrixRoomMember(localRtcMember);
@@ -98,6 +99,7 @@ const roomId = "!foo:bar";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  activeCallInstanceSeed = 0;
   (prefetchSounds as MockedFunction<typeof prefetchSounds>).mockResolvedValue({
     sound: new ArrayBuffer(0),
   });
@@ -110,8 +112,10 @@ beforeEach(() => {
   // A trivial implementation of Active call to ensure we are testing GroupCallView exclusively here.
   (ActiveCall as MockedFunction<typeof ActiveCall>).mockImplementation(
     ({ onLeft: onLeave }) => {
+      const [instanceId] = useState(() => ++activeCallInstanceSeed);
       return (
         <div>
+          <div data-testid="active_call_instance">{instanceId}</div>
           <button onClick={() => onLeave("user")}>Leave</button>
           <button onClick={() => onLeave("allOthersLeft")}>
             SimulateOtherLeft
@@ -387,18 +391,66 @@ test.skip("GroupCallView shows errors that occur during joining", async () => {
   screen.getByText("Call is not supported");
 });
 
-test("user can reconnect after a membership manager error", async () => {
-  const user = userEvent.setup();
+test("automatically reconnects up to three times after membership manager errors", async () => {
   const { rtcSession } = createGroupCallView(null, true);
+
+  await waitFor(() =>
+    expect(screen.getByTestId("active_call_instance")).toHaveTextContent("1"),
+  );
   await act(() =>
     rtcSession.emit(MatrixRTCSessionEvent.MembershipManagerError, undefined),
   );
-  // XXX: Wrapping the following click in act() shouldn't be necessary (the
-  // async state update should be processed automatically by the waitFor call),
-  // and yet here we are.
+  await waitFor(() =>
+    expect(screen.getByTestId("active_call_instance")).toHaveTextContent("2"),
+  );
+  await act(() =>
+    rtcSession.emit(MatrixRTCSessionEvent.MembershipManagerError, undefined),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("active_call_instance")).toHaveTextContent("3"),
+  );
+  await act(() =>
+    rtcSession.emit(MatrixRTCSessionEvent.MembershipManagerError, undefined),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("active_call_instance")).toHaveTextContent("4"),
+  );
+  expect(screen.queryByRole("button", { name: "Reconnect" })).toBeNull();
+});
+
+test("user can reconnect manually after three automatic reconnect attempts are exhausted", async () => {
+  const user = userEvent.setup();
+  const { rtcSession } = createGroupCallView(null, true);
+
+  await waitFor(() =>
+    expect(screen.getByTestId("active_call_instance")).toHaveTextContent("1"),
+  );
+  await act(() =>
+    rtcSession.emit(MatrixRTCSessionEvent.MembershipManagerError, undefined),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("active_call_instance")).toHaveTextContent("2"),
+  );
+  await act(() =>
+    rtcSession.emit(MatrixRTCSessionEvent.MembershipManagerError, undefined),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("active_call_instance")).toHaveTextContent("3"),
+  );
+  await act(() =>
+    rtcSession.emit(MatrixRTCSessionEvent.MembershipManagerError, undefined),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("active_call_instance")).toHaveTextContent("4"),
+  );
+  await act(() =>
+    rtcSession.emit(MatrixRTCSessionEvent.MembershipManagerError, undefined),
+  );
+  await waitFor(() => screen.getByRole("button", { name: "Reconnect" }));
   await act(async () =>
     user.click(screen.getByRole("button", { name: "Reconnect" })),
   );
-  // In-call controls should be visible again
-  await waitFor(() => screen.getByRole("button", { name: "Leave" }));
+  await waitFor(() =>
+    expect(screen.getByTestId("active_call_instance")).toHaveTextContent("5"),
+  );
 });
