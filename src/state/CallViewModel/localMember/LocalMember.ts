@@ -400,9 +400,16 @@ export const createLocalMembership$ = ({
   const effectiveLocalConnectionState$ = scope.behavior<
     ConnectionState | Error | null
   >(
-    combineLatest([localConnectionState$, joinAndPublishRequested$]).pipe(
+    combineLatest([
+      localConnectionState$,
+      joinAndPublishRequested$,
+      homeserverConnected.combined$,
+    ]).pipe(
       scan(
-        (previous, [localConnectionState, shouldJoinAndPublish]) => {
+        (
+          previous,
+          [localConnectionState, shouldJoinAndPublish, homeserverConnected],
+        ) => {
           const hadConnectedPreviously =
             previous.hadConnectedPreviously ||
             localConnectionState === ConnectionState.LivekitConnected ||
@@ -412,6 +419,7 @@ export const createLocalMembership$ = ({
           if (
             shouldJoinAndPublish &&
             hadConnectedPreviously &&
+            homeserverConnected &&
             localConnectionState === ConnectionState.LivekitDisconnected
           ) {
             return {

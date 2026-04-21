@@ -454,3 +454,43 @@ test("user can reconnect manually after three automatic reconnect attempts are e
     expect(screen.getByTestId("active_call_instance")).toHaveTextContent("5"),
   );
 });
+
+test("successful recovery resets the automatic reconnect budget", async () => {
+  const user = userEvent.setup();
+  const { rtcSession } = createGroupCallView(null, true);
+
+  await waitFor(() =>
+    expect(screen.getByTestId("active_call_instance")).toHaveTextContent("1"),
+  );
+
+  for (const expectedInstance of ["2", "3", "4"]) {
+    await act(() =>
+      rtcSession.emit(MatrixRTCSessionEvent.MembershipManagerError, undefined),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("active_call_instance")).toHaveTextContent(
+        expectedInstance,
+      ),
+    );
+  }
+
+  await act(() =>
+    rtcSession.emit(MatrixRTCSessionEvent.MembershipManagerError, undefined),
+  );
+  await waitFor(() => screen.getByRole("button", { name: "Reconnect" }));
+
+  await act(async () =>
+    user.click(screen.getByRole("button", { name: "Reconnect" })),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("active_call_instance")).toHaveTextContent("5"),
+  );
+
+  await act(() =>
+    rtcSession.emit(MatrixRTCSessionEvent.MembershipManagerError, undefined),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("active_call_instance")).toHaveTextContent("6"),
+  );
+  expect(screen.queryByRole("button", { name: "Reconnect" })).toBeNull();
+});

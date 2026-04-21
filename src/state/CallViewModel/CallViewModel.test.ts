@@ -104,7 +104,6 @@ const dave = mockMatrixRoomMember(daveRtcMember, { rawDisplayName: "Dave" });
 
 const daveId = `${dave.userId}:${daveRtcMember.deviceId}`;
 
-const localParticipant = mockLocalParticipant({ identity: "" });
 const aliceSharingScreen = mockRemoteParticipant({
   identity: aliceId,
   isScreenShareEnabled: true,
@@ -1252,38 +1251,50 @@ describe.each([
   });
 
   it.skip("media tracks are paused while reconnecting to MatrixRTC", () => {
+    // TODO: This integration test mutates the shared localParticipant fixture
+    // out of band and does not deterministically drive the LocalMember
+    // participant$/homeserverConnected path. Re-add this as a focused
+    // LocalMember test with controllable inputs instead.
     withTestScheduler(({ schedule, expectObservable }) => {
-      const trackRunning$ = new BehaviorSubject(true);
+      const cameraTrackRunning$ = new BehaviorSubject(true);
+      const screenTrackRunning$ = new BehaviorSubject(true);
       const originalPublications = localParticipant.trackPublications;
+      const makePauseableTrack = (running$: BehaviorSubject<boolean>) =>
+        new (class {
+          public get isUpstreamPaused(): boolean {
+            return !running$.value;
+          }
+          public async pauseUpstream(): Promise<void> {
+            running$.next(false);
+            return Promise.resolve();
+          }
+          public async resumeUpstream(): Promise<void> {
+            running$.next(true);
+            return Promise.resolve();
+          }
+        })();
       localParticipant.trackPublications = new Map([
         [
-          "video",
+          "camera",
           {
-            track: new (class {
-              public get isUpstreamPaused(): boolean {
-                return !trackRunning$.value;
-              }
-              public async pauseUpstream(): Promise<void> {
-                trackRunning$.next(false);
-                return Promise.resolve();
-              }
-              public async resumeUpstream(): Promise<void> {
-                trackRunning$.next(true);
-                return Promise.resolve();
-              }
-            })(),
+            track: makePauseableTrack(cameraTrackRunning$),
+          } as unknown as LocalTrackPublication,
+        ],
+        [
+          "screen",
+          {
+            track: makePauseableTrack(screenTrackRunning$),
           } as unknown as LocalTrackPublication,
         ],
       ]);
       onTestFinished(() => {
         localParticipant.trackPublications = originalPublications;
       });
+      const publishedTracksRunning$ = combineLatest([
+        cameraTrackRunning$,
+        screenTrackRunning$,
+      ]).pipe(map(([cameraRunning, screenRunning]) => cameraRunning && screenRunning));
 
-      // There are three indicators that the client might be disconnected from
-      // MatrixRTC: whether the sync loop is connected, whether the membership is
-      // present in local room state, and whether the membership manager thinks
-      // we've hit the timeout for the delayed leave event. Let's test all
-      // combinations of these conditions.
       const syncingMarbles = "             nyny----n--y";
       const membershipStatusMarbles = "    y---ny-n-yn-y";
       const probablyLeftMarbles = "        n-----y-ny---n";
@@ -1301,6 +1312,10 @@ describe.each([
             y: () => {
               rtcSession.membershipStatus = Status.Connected;
             },
+            n: () => {
+              rtcSession.membershipStatus = Status.Unknown;
+            },
+            '-': () => {},
           });
           schedule(probablyLeftMarbles, {
             y: () => {
@@ -1314,7 +1329,7 @@ describe.each([
             expectedReconnectingMarbles,
             yesNo,
           );
-          expectObservable(trackRunning$).toBe(
+          expectObservable(publishedTracksRunning$).toBe(
             expectedTrackRunningMarbles,
             yesNo,
           );

@@ -256,8 +256,11 @@ export const GroupCallView: FC<Props> = ({
 
   useEffect(() => {
     if (!pendingAutoReconnect) return;
-    setPendingAutoReconnect(false);
-    void recoverCall();
+    void recoverCall().finally(() => {
+      queueMicrotask(() => {
+        setPendingAutoReconnect(false);
+      });
+    });
   }, [pendingAutoReconnect, recoverCall]);
 
   useEffect(() => {
@@ -538,6 +541,7 @@ export const GroupCallView: FC<Props> = ({
       recoveryActionHandler={async (action) => {
         if (action == "reconnect") {
           await recoverCall();
+          automaticReconnectAttemptsRef.current = 0;
         }
       }}
       onError={(error) => {

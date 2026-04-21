@@ -228,15 +228,15 @@ export class Publisher {
 
     const lkRoom = this.connection.livekitRoom;
 
-    // Resume upstream for both audio and video tracks
+    // Resume upstream for all publishable local tracks
     // We need to call it explicitly because call setTrackEnabled does not always
     // resume upstream. It will only if you switch the track from disabled to enabled,
     // but if the track is already enabled but upstream is paused, it won't resume it.
-    // TODO what about screen share?
     try {
       await this.resumeUpstreams(lkRoom, [
         Track.Source.Microphone,
         Track.Source.Camera,
+        Track.Source.ScreenShare,
       ]);
     } catch (e) {
       this.logger.error(`Failed to resume upstreams`, e);
