@@ -12,6 +12,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
 } from "react";
 import classNames from "classnames";
 import { useTranslation } from "react-i18next";
@@ -86,6 +87,7 @@ export const EndCallMenuButton: FC<EndCallMenuButtonProps> = ({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const keepOpenForConfirmationRef = useRef(false);
 
   // Reset confirming state after timeout
   useEffect(() => {
@@ -119,6 +121,7 @@ export const EndCallMenuButton: FC<EndCallMenuButtonProps> = ({
         setOpen(false);
       } else {
         // First click - enter confirming state
+        keepOpenForConfirmationRef.current = true;
         e.preventDefault();
         setConfirming(true);
       }
@@ -128,6 +131,14 @@ export const EndCallMenuButton: FC<EndCallMenuButtonProps> = ({
 
   const showTerminateOption = participantCount > 1;
   const tooltipLabel = t("hangup_button_label");
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (!nextOpen && keepOpenForConfirmationRef.current) {
+      keepOpenForConfirmationRef.current = false;
+      return;
+    }
+
+    setOpen(nextOpen);
+  }, []);
 
   return (
     <Menu
@@ -135,7 +146,7 @@ export const EndCallMenuButton: FC<EndCallMenuButtonProps> = ({
       showTitle={false}
       align="center"
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={handleOpenChange}
       trigger={
         <EndCallMenuTriggerButton
           {...props}

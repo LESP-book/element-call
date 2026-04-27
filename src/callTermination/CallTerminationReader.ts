@@ -8,6 +8,7 @@ Please see LICENSE in the repository root for full details.
 import { type MatrixEvent, type MatrixClient } from "matrix-js-sdk";
 import { RoomEvent as MatrixRoomEvent } from "matrix-js-sdk";
 import { MatrixEventEvent } from "matrix-js-sdk";
+import { RoomStateEvent } from "matrix-js-sdk";
 import { logger } from "matrix-js-sdk/lib/logger";
 import { type MatrixRTCSession } from "matrix-js-sdk/lib/matrixrtc";
 import { Subject } from "rxjs";
@@ -15,6 +16,9 @@ import { Subject } from "rxjs";
 import {
   ElementCallTerminateEventType,
   type CallTerminateEventContent,
+  LegacyGroupCallEndedReason,
+  LegacyGroupCallEventType,
+  type LegacyGroupCallEventContent,
   type TerminationEvent,
 } from ".";
 import { type ObservableScope } from "../state/ObservableScope";
@@ -28,6 +32,7 @@ import { type ObservableScope } from "../state/ObservableScope";
  */
 export class CallTerminationReader {
   private readonly terminationSubject$ = new Subject<TerminationEvent>();
+  private readonly emittedEventIds = new Set<string>();
 
   /**
    * Emits when the call is terminated by another participant.
@@ -63,6 +68,12 @@ export class CallTerminationReader {
         this.handleTerminationEvent,
       ),
     );
+
+    const currentState = this.rtcSession.room.currentState;
+    currentState?.on?.(RoomStateEvent.Events, this.handleTerminationEvent);
+    this.scope.onEnd(() =>
+      currentState?.off?.(RoomStateEvent.Events, this.handleTerminationEvent),
+    );
   }
 
   /**
@@ -77,19 +88,27 @@ export class CallTerminationReader {
     // Skip any events that are still sending
     if (event.isSending()) return;
 
-    // Only handle our custom termination event type
-    if (event.getType() !== ElementCallTerminateEventType) return;
+    const eventType = event.getType();
+    if (
+      eventType !== ElementCallTerminateEventType &&
+      eventType !== LegacyGroupCallEventType
+    ) {
+      return;
+    }
 
     const sender = event.getSender();
     const eventId = event.getId();
 
     // Skip events without sender or ID
     if (!sender || !eventId) return;
+    if (this.emittedEventIds.has(eventId)) return;
 
     // Try to decrypt if needed
     room.client
       .decryptEventIfNeeded(event)
-      .catch((e) => logger.warn(`Failed to decrypt termination event ${eventId}`, e));
+      .catch((e) =>
+        logger.warn(`Failed to decrypt termination event ${eventId}`, e),
+      );
 
     if (event.isBeingDecrypted() || event.isDecryptionFailure()) return;
 
@@ -97,6 +116,21 @@ export class CallTerminationReader {
     const localUserId = this.client.getUserId();
     if (sender === localUserId) {
       logger.debug(`Ignoring self-sent termination event from ${sender}`);
+      return;
+    }
+
+    if (eventType === LegacyGroupCallEventType) {
+      const content = event.getContent<LegacyGroupCallEventContent>();
+      if (content["m.terminated"] !== LegacyGroupCallEndedReason) return;
+
+      const timestamp = event.getTs();
+      logger.info(`Legacy group call terminated by ${sender}`);
+      this.emittedEventIds.add(eventId);
+      this.terminationSubject$.next({
+        terminatedBy: sender,
+        reason: content["m.terminated"],
+        timestamp,
+      });
       return;
     }
 
@@ -111,6 +145,7 @@ export class CallTerminationReader {
     logger.info(`Call terminated by ${content.terminated_by}`);
 
     // Emit the termination event
+    this.emittedEventIds.add(eventId);
     this.terminationSubject$.next({
       terminatedBy: content.terminated_by,
       reason: content.reason,

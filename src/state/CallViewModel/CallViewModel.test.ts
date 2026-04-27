@@ -18,7 +18,7 @@ import {
   of,
   switchMap,
 } from "rxjs";
-import { SyncState } from "matrix-js-sdk";
+import { MatrixEvent, SyncState } from "matrix-js-sdk";
 import {
   ConnectionState,
   type LocalTrackPublication,
@@ -64,7 +64,11 @@ import { type Behavior, constant } from "../Behavior.ts";
 import { withCallViewModel as withCallViewModelInMode } from "./CallViewModelTestUtils.ts";
 import { MatrixRTCMode } from "../../settings/settings.ts";
 import { initializeWidget } from "../../widget.ts";
-import { ElementCallTerminateEventType } from "../../callTermination";
+import {
+  ElementCallTerminateEventType,
+  LegacyGroupCallEndedReason,
+  LegacyGroupCallEventType,
+} from "../../callTermination";
 
 initializeWidget();
 
@@ -234,6 +238,20 @@ function mockRingEvent(
   } as unknown as { event_id: string } & IRTCNotificationContent;
 }
 
+const makeActiveLegacyGroupCallEvent = (): MatrixEvent =>
+  new MatrixEvent({
+    room_id: "!myRoomId:example.com",
+    event_id: "$legacy-call:example.org",
+    sender: aliceUserId,
+    type: LegacyGroupCallEventType,
+    state_key: "legacy-call",
+    origin_server_ts: 12345,
+    content: {
+      "m.intent": "m.ring",
+      "m.type": "m.video",
+    },
+  });
+
 describe("CallViewModel terminateCall", () => {
   const withTerminatingCallViewModel = async (
     continuation: (
@@ -281,6 +299,53 @@ describe("CallViewModel terminateCall", () => {
           timestamp: expect.any(Number),
         },
       );
+      expect(leaveReasons).toStrictEqual(["user"]);
+    });
+  });
+
+  test("also marks active legacy group calls as terminated", async () => {
+    await withTerminatingCallViewModel(async (vm, rtcSession) => {
+      const sendStateEvent = vi.mocked(rtcSession.room.client.sendStateEvent);
+      const legacyCallEvent = makeActiveLegacyGroupCallEvent();
+      Object.assign(rtcSession.room, {
+        currentState: {
+          getStateEvents: vi.fn().mockReturnValue([legacyCallEvent]),
+        },
+      });
+
+      await vm.terminateCall();
+
+      expect(sendStateEvent).toHaveBeenCalledWith(
+        rtcSession.room.roomId,
+        LegacyGroupCallEventType,
+        {
+          ...legacyCallEvent.getContent(),
+          "m.terminated": LegacyGroupCallEndedReason,
+        },
+        "legacy-call",
+      );
+    });
+  });
+
+  test("triggers local leave when the custom termination event fails but legacy termination succeeds", async () => {
+    await withTerminatingCallViewModel(async (vm, rtcSession) => {
+      const sendEvent = vi.mocked(rtcSession.room.client.sendEvent);
+      sendEvent.mockRejectedValueOnce(new Error("send event failed"));
+      Object.assign(rtcSession.room, {
+        currentState: {
+          getStateEvents: vi
+            .fn()
+            .mockReturnValue([makeActiveLegacyGroupCallEvent()]),
+        },
+      });
+      const leaveReasons: unknown[] = [];
+      const subscription = vm.leave$.subscribe((reason) =>
+        leaveReasons.push(reason),
+      );
+      onTestFinished(() => subscription.unsubscribe());
+
+      await vm.terminateCall();
+
       expect(leaveReasons).toStrictEqual(["user"]);
     });
   });

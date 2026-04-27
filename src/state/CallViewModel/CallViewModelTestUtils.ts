@@ -139,6 +139,10 @@ export function withCallViewModel(mode: MatrixRTCMode) {
         public sendEvent = vi
           .fn()
           .mockResolvedValue({ event_id: "$fake:event" });
+
+        public sendStateEvent = vi
+          .fn()
+          .mockResolvedValue({ event_id: "$fake:event" });
       })() as unknown as MatrixClient,
       getMembers: () => roomMembers,
       getMembersWithMembership: () => roomMembers,
