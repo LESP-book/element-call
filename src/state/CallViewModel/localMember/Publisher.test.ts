@@ -289,7 +289,7 @@ describe("Publisher", () => {
 
   it("resumes screenshare upstream when publishing starts again", async () => {
     const screenTrack = createMockLocalTrack(Track.Source.ScreenShare);
-    screenTrack.pauseUpstream();
+    await screenTrack.pauseUpstream();
     trackPublications.push({
       track: screenTrack,
       source: Track.Source.ScreenShare,
@@ -306,8 +306,8 @@ describe("Publisher", () => {
   it("keeps camera behavior while also resuming screenshare upstream", async () => {
     const cameraTrack = createMockLocalTrack(Track.Source.Camera);
     const screenTrack = createMockLocalTrack(Track.Source.ScreenShare);
-    cameraTrack.pauseUpstream();
-    screenTrack.pauseUpstream();
+    await cameraTrack.pauseUpstream();
+    await screenTrack.pauseUpstream();
     trackPublications.push(
       {
         track: cameraTrack,

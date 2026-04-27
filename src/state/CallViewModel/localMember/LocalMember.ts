@@ -159,6 +159,8 @@ interface Props {
  *  - connectionState: the current connection state. Including matrix server and livekit server connection.
  *  - sharingScreen$: Whether we are sharing our screen. `undefined` if we cannot share the screen.
  */
+const matrixRtcPausedTracks = new WeakSet<object>();
+
 export const createLocalMembership$ = ({
   scope,
   connectionManager,
@@ -633,15 +635,27 @@ export const createLocalMembership$ = ({
     .subscribe(([participant, connected]) => {
       if (!participant) return;
       const publications = participant.trackPublications.values();
+      if (!joinAndPublishRequested$.value) {
+        for (const p of publications) {
+          if (p.track) matrixRtcPausedTracks.delete(p.track);
+        }
+        return;
+      }
+
       if (connected) {
         for (const p of publications) {
-          if (p.track?.isUpstreamPaused === true) {
-            const kind = p.track.kind;
+          if (
+            p.track?.isUpstreamPaused === true &&
+            matrixRtcPausedTracks.has(p.track)
+          ) {
+            const track = p.track;
+            const kind = track.kind;
             logger.info(
               `Resuming ${kind} track (MatrixRTC connection present)`,
             );
-            p.track
+            track
               .resumeUpstream()
+              .then(() => matrixRtcPausedTracks.delete(track))
               .catch((e) =>
                 logger.error(
                   `Failed to resume ${kind} track after MatrixRTC reconnection`,
@@ -653,18 +667,21 @@ export const createLocalMembership$ = ({
       } else {
         for (const p of publications) {
           if (p.track?.isUpstreamPaused === false) {
-            const kind = p.track.kind;
+            const track = p.track;
+            const kind = track.kind;
             logger.info(
               `Pausing ${kind} track (uncertain MatrixRTC connection)`,
             );
-            p.track
+            matrixRtcPausedTracks.add(track);
+            track
               .pauseUpstream()
-              .catch((e) =>
+              .catch((e) => {
+                matrixRtcPausedTracks.delete(track);
                 logger.error(
                   `Failed to pause ${kind} track after entering uncertain MatrixRTC connection`,
                   e,
-                ),
-              );
+                );
+              });
           }
         }
       }
