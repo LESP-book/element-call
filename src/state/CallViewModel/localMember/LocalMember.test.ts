@@ -223,7 +223,6 @@ describe("LocalMembership", () => {
         null,
       );
 
-      // we do not need any connection data since we want to fail before reaching that.
       const mockConnectionManager = {
         transports$: scope.behavior(
           localTransport$.pipe(map((t) => new Epoch([t]))),
@@ -320,8 +319,6 @@ describe("LocalMembership", () => {
         seed += 1;
         logger.info(`creating [${a}]`);
         const p = {
-          // It is enought to check if destroy is called. Destroy itself is tested in the publisher to make sure it does
-          // all the cleanup we need.
           destroy: vi.fn(),
           stopPublishing: vi.fn().mockImplementation(() => {
             logger.info(`stopPublishing [${a}]`);
@@ -354,16 +351,13 @@ describe("LocalMembership", () => {
 
     expect(publisherFactory).toHaveBeenCalledTimes(2);
     expect(publishers.length).toBe(2);
-    // stop the first Publisher and let the second one life.
     expect(publishers[0].destroy).toHaveBeenCalled();
     expect(publishers[1].destroy).not.toHaveBeenCalled();
     expect(publisherFactory.mock.calls[0][0].transport).toBe(aTransport);
     expect(publisherFactory.mock.calls[1][0].transport).toBe(bTransport);
     scope.end();
     await flushPromises();
-    // stop all tracks after ending scopes
     expect(publishers[1].destroy).toHaveBeenCalled();
-    // expect(publishers[1].stopTracks).toHaveBeenCalled();
 
     defaultCreateLocalMemberValues.createPublisherFactory.mockReset();
   });
@@ -429,8 +423,6 @@ describe("LocalMembership", () => {
     defaultCreateLocalMemberValues.createPublisherFactory.mockImplementation(
       () => {
         const p = {
-          // It is enought to check if destroy is called. Destroy itself is tested in the publisher to make sure it does
-          // all the cleanup we need.
           destroy: vi.fn(),
           createAndSetupTracks: vi.fn().mockImplementation(async () => {
             tracks$.next([{}, {}] as LocalTrack[]);
@@ -450,7 +442,6 @@ describe("LocalMembership", () => {
 
     const connectionManagerData = new ConnectionManagerData();
     connectionManagerData.add(connectionTransportAConnected, []);
-    // connectionManagerData.add(connectionTransportB, []);
     const localMembership = createLocalMembership$({
       scope,
       ...defaultCreateLocalMemberValues,
@@ -461,7 +452,6 @@ describe("LocalMembership", () => {
     });
     await flushPromises();
     expect(publisherFactory).toHaveBeenCalledOnce();
-    // expect(localMembership.tracks$.value.length).toBe(0);
     expect(publishers[0].createAndSetupTracks).not.toHaveBeenCalled();
     localMembership.startTracks();
     await flushPromises();
@@ -469,13 +459,10 @@ describe("LocalMembership", () => {
 
     scope.end();
     await flushPromises();
-    // stop all tracks after ending scopes
     expect(publishers[0].destroy).toHaveBeenCalled();
-    // expect(publishers[0].stopTracks).toHaveBeenCalled();
     publisherFactory.mockClear();
   });
-  // TODO add an integration test combining publisher and localMembership
-  //
+
   it("tracks livekit state correctly", async () => {
     const scope = new ObservableScope();
 
@@ -494,8 +481,6 @@ describe("LocalMembership", () => {
     defaultCreateLocalMemberValues.createPublisherFactory.mockImplementation(
       () => {
         const p = {
-          // It is enought to check if destroy is called. Destroy itself is tested in the publisher to make sure it does
-          // all the cleanup we need.
           destroy: vi.fn(),
           createAndSetupTracks: vi.fn().mockImplementation(async () => {
             await createTrackResolver.promise;
@@ -538,7 +523,6 @@ describe("LocalMembership", () => {
 
     const connectionManagerData2 = new ConnectionManagerData();
     connectionManagerData2.add(
-      // clone because we will mutate this later.
       { ...connectionTransportAConnecting } as unknown as Connection,
       [],
     );
@@ -566,40 +550,25 @@ describe("LocalMembership", () => {
     });
 
     expect(publisherFactory).toHaveBeenCalledOnce();
-    // expect(localMembership.tracks$.value.length).toBe(0);
 
-    // -------
     localMembership.startTracks();
-    // -------
 
     await flushPromises();
-    // expect(localMembership.localMemberState$.value).toStrictEqual({
-    //   matrix: RTCMemberStatus.Connected,
-    //   media: {
-    //     tracks: TrackState.Creating,
-    //     connection: ConnectionState.LivekitConnected,
-    //   },
-    // });
     createTrackResolver.resolve();
     await flushPromises();
     expect(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (localMembership.localMemberState$.value as any).media,
     ).toStrictEqual(PublishState.WaitingForUser);
 
-    // -------
     localMembership.requestJoinAndPublish();
-    // -------
 
     expect(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (localMembership.localMemberState$.value as any).media,
     ).toStrictEqual(PublishState.Publishing);
 
     publishResolver.resolve();
     await flushPromises();
     expect(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (localMembership.localMemberState$.value as any).media,
     ).toStrictEqual(PublishState.Publishing);
 
@@ -608,14 +577,9 @@ describe("LocalMembership", () => {
     expect(localMembership.localMemberState$.isStopped).toBe(false);
     scope.end();
     await flushPromises();
-    // stays in connected state because it is stopped before the update to tracks update the state.
     expect(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (localMembership.localMemberState$.value as any).media,
     ).toStrictEqual(PublishState.Publishing);
-    // stop all tracks after ending scopes
     expect(publishers[0].destroy).toHaveBeenCalled();
-    // expect(publishers[0].stopTracks).toHaveBeenCalled();
   });
-  // TODO add tests for matrix local matrix participation.
 });

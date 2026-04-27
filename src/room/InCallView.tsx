@@ -661,7 +661,11 @@ export const InCallView: FC<InCallViewProps> = ({
     <EndCallMenuButton
       key="end_call_menu"
       onLeave={() => vm.hangup()}
-      onTerminate={() => void vm.terminateCall()}
+      onTerminate={() => {
+        void vm.terminateCall().catch((error) => {
+          logger.error("Failed to terminate call for all participants", error);
+        });
+      }}
       participantCount={participantCount}
       data-testid="incall_end_call_menu"
     />,

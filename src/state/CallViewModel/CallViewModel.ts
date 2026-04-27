@@ -1575,11 +1575,19 @@ export function createCallViewModel$(
         terminated_by: userId,
         timestamp: Date.now(),
       };
-      await client.sendEvent(
-        matrixRoom.roomId,
-        ElementCallTerminateEventType,
-        content,
-      );
+      try {
+        await client.sendEvent(
+          matrixRoom.roomId,
+          ElementCallTerminateEventType,
+          content,
+        );
+      } catch (error) {
+        logger.error(
+          `Failed to send call termination event ${ElementCallTerminateEventType} in room ${matrixRoom.roomId}`,
+          error,
+        );
+        throw error;
+      }
       // Also trigger local hangup
       userHangup$.next();
     },
