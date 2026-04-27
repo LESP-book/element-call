@@ -10,14 +10,20 @@ import {
   MatrixEvent,
   MatrixEventEvent,
   RoomEvent as MatrixRoomEvent,
+  RoomStateEvent,
 } from "matrix-js-sdk";
+import EventEmitter from "events";
 import { describe, expect, test } from "vitest";
 
 import { getBasicRTCSession } from "../utils/test-viewmodel";
 import { alice, local, localRtcMember } from "../utils/test-fixtures";
 import { testScope } from "../utils/test";
 import { CallTerminationReader } from "./CallTerminationReader";
-import { ElementCallTerminateEventType } from ".";
+import {
+  ElementCallTerminateEventType,
+  LegacyGroupCallEndedReason,
+  LegacyGroupCallEventType,
+} from ".";
 
 const makeTerminationEvent = ({
   roomId,
@@ -37,6 +43,25 @@ const makeTerminationEvent = ({
     sender,
     type: ElementCallTerminateEventType,
     content,
+  });
+
+const makeLegacyGroupCallTerminationEvent = ({
+  roomId,
+  sender,
+}: {
+  roomId: string;
+  sender: string;
+}): MatrixEvent =>
+  new MatrixEvent({
+    room_id: roomId,
+    event_id: `$legacy-terminate-${sender}:example.org`,
+    sender,
+    type: LegacyGroupCallEventType,
+    state_key: "legacy-call",
+    origin_server_ts: 67890,
+    content: {
+      "m.terminated": LegacyGroupCallEndedReason,
+    },
   });
 
 describe("CallTerminationReader", () => {
@@ -153,6 +178,37 @@ describe("CallTerminationReader", () => {
         terminatedBy: alice.userId,
         reason: undefined,
         timestamp: 12345,
+      },
+    ]);
+  });
+
+  test("emits termination events from legacy group call state updates", () => {
+    const { rtcSession } = getBasicRTCSession([local, alice]);
+    const currentState = new EventEmitter();
+    Object.assign(rtcSession.room, { currentState });
+    const reader = new CallTerminationReader(
+      testScope(),
+      rtcSession.asMockedSession(),
+      rtcSession.room.client,
+    );
+    const terminations: unknown[] = [];
+    reader.termination$.subscribe((termination) =>
+      terminations.push(termination),
+    );
+
+    currentState.emit(
+      RoomStateEvent.Events,
+      makeLegacyGroupCallTerminationEvent({
+        roomId: rtcSession.room.roomId,
+        sender: alice.userId,
+      }),
+    );
+
+    expect(terminations).toStrictEqual([
+      {
+        terminatedBy: alice.userId,
+        reason: LegacyGroupCallEndedReason,
+        timestamp: 67890,
       },
     ]);
   });
