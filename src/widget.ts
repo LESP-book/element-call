@@ -13,9 +13,7 @@ import {
 } from "matrix-js-sdk";
 import {
   WidgetApi,
-  EventDirection,
   MatrixCapabilities,
-  WidgetEventCapability,
   WidgetApiToWidgetAction,
 } from "matrix-widget-api";
 
@@ -24,10 +22,7 @@ import { LazyEventEmitter } from "./LazyEventEmitter";
 import { getUrlParams } from "./UrlParams";
 import { Config } from "./config/Config";
 import { ElementCallReactionEventType } from "./reactions";
-import {
-  ElementCallTerminateEventType,
-  LegacyGroupCallEventType,
-} from "./callTermination";
+import { ElementCallTerminateEventType } from "./callTermination";
 
 // Subset of the actions in element-web
 export enum ElementWidgetActions {
@@ -62,39 +57,12 @@ export interface WidgetHelpers {
   client: Promise<MatrixClient>;
 }
 
-const callTerminationWidgetCapabilities = [
-  WidgetEventCapability.forRoomEvent(
-    EventDirection.Send,
-    ElementCallTerminateEventType,
-  ).raw,
-  WidgetEventCapability.forRoomEvent(
-    EventDirection.Receive,
-    ElementCallTerminateEventType,
-  ).raw,
-  WidgetEventCapability.forStateEvent(
-    EventDirection.Send,
-    LegacyGroupCallEventType,
-  ).raw,
-  WidgetEventCapability.forStateEvent(
-    EventDirection.Receive,
-    LegacyGroupCallEventType,
-  ).raw,
-];
-
 /**
  * A point of access to the widget API, if the app is running as a widget. This
  * is initialized with `initializeWidget`. This should happen at the top level because the widget messaging
  * needs to be set up ASAP on load to ensure it doesn't miss any requests.
  */
 export let widget: WidgetHelpers | null;
-
-export const getMissingCallTerminationWidgetCapabilities = (): string[] => {
-  if (widget === null) return [];
-
-  return callTerminationWidgetCapabilities.filter(
-    (capability) => !widget!.api.hasCapability(capability),
-  );
-};
 
 /**
  * Should be called as soon as possible on app start. (In the initilizer before react)
@@ -168,7 +136,6 @@ export const initializeWidget = (
       ];
 
       const sendState = [
-        { eventType: LegacyGroupCallEventType },
         userId, // Legacy call membership events
         `_${userId}_${deviceId}_${rtcApplication}`, // Session membership events
         `${userId}_${deviceId}_${rtcApplication}`, // The above with no leading underscore, for room versions whose auth rules allow it
@@ -185,7 +152,6 @@ export const initializeWidget = (
         { eventType: EventType.RoomName },
         { eventType: EventType.RoomMember },
         { eventType: EventType.RoomEncryption },
-        { eventType: LegacyGroupCallEventType },
         { eventType: EventType.GroupCallMemberPrefix },
       ];
 

@@ -149,7 +149,6 @@
   "terminate_call_button": "End for everyone",
   "terminate_call_confirm": "End call for {{count}} people?",
   "terminate_call_confirm_button": "End call",
-  "terminate_call_failed_local_leave": "Couldn't end the call for everyone. You left the call.",
   "call_terminated_by": "{{name}} ended the call",
   "call_terminated_title": "Call ended",
   "invite_modal": {

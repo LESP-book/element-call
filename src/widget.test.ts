@@ -12,10 +12,7 @@ import { getUrlParams } from "./UrlParams";
 import { initializeWidget, widget } from "./widget";
 import { Config } from "./config/Config";
 import { ElementCallReactionEventType } from "./reactions";
-import {
-  ElementCallTerminateEventType,
-  LegacyGroupCallEventType,
-} from "./callTermination";
+import { ElementCallTerminateEventType } from "./callTermination";
 
 vi.mock("matrix-js-sdk", { spy: true });
 const createRoomWidgetClientSpy = vi.mocked(createRoomWidgetClient);
@@ -74,7 +71,6 @@ describe("widget", () => {
     ];
 
     const sendState = [
-      { eventType: LegacyGroupCallEventType },
       { eventType: "org.matrix.msc3401.call.member", stateKey: "myYser" }, // Legacy call membership events
       {
         eventType: "org.matrix.msc3401.call.member",
@@ -90,7 +86,6 @@ describe("widget", () => {
       { eventType: EventType.RoomName },
       { eventType: EventType.RoomMember },
       { eventType: EventType.RoomEncryption },
-      { eventType: LegacyGroupCallEventType },
       { eventType: EventType.GroupCallMemberPrefix },
     ];
 

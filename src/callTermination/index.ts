@@ -12,16 +12,6 @@ Please see LICENSE in the repository root for full details.
 export const ElementCallTerminateEventType = "io.element.call.terminate";
 
 /**
- * Legacy group call state event used by Matrix clients to mark a call as ended.
- */
-export const LegacyGroupCallEventType = "org.matrix.msc3401.call";
-
-/**
- * Legacy group call termination reason used by matrix-js-sdk group calls.
- */
-export const LegacyGroupCallEndedReason = "call_ended";
-
-/**
  * Content structure for the call termination event.
  */
 export interface CallTerminateEventContent {
@@ -31,14 +21,6 @@ export interface CallTerminateEventContent {
   timestamp: number;
   /** Optional reason for ending the call */
   reason?: string;
-}
-
-/**
- * Legacy group call state content relevant to call termination.
- */
-export interface LegacyGroupCallEventContent {
-  /** Legacy group call termination reason */
-  "m.terminated"?: string;
 }
 
 /**

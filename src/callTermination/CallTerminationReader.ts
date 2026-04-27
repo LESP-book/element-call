@@ -8,7 +8,6 @@ Please see LICENSE in the repository root for full details.
 import { type MatrixEvent, type MatrixClient } from "matrix-js-sdk";
 import { RoomEvent as MatrixRoomEvent } from "matrix-js-sdk";
 import { MatrixEventEvent } from "matrix-js-sdk";
-import { RoomStateEvent } from "matrix-js-sdk";
 import { logger } from "matrix-js-sdk/lib/logger";
 import { type MatrixRTCSession } from "matrix-js-sdk/lib/matrixrtc";
 import { Subject } from "rxjs";
@@ -16,9 +15,6 @@ import { Subject } from "rxjs";
 import {
   ElementCallTerminateEventType,
   type CallTerminateEventContent,
-  LegacyGroupCallEndedReason,
-  LegacyGroupCallEventType,
-  type LegacyGroupCallEventContent,
   type TerminationEvent,
 } from ".";
 import { type ObservableScope } from "../state/ObservableScope";
@@ -68,12 +64,6 @@ export class CallTerminationReader {
         this.handleTerminationEvent,
       ),
     );
-
-    const currentState = this.rtcSession.room.currentState;
-    currentState?.on?.(RoomStateEvent.Events, this.handleTerminationEvent);
-    this.scope.onEnd(() =>
-      currentState?.off?.(RoomStateEvent.Events, this.handleTerminationEvent),
-    );
   }
 
   /**
@@ -89,12 +79,7 @@ export class CallTerminationReader {
     if (event.isSending()) return;
 
     const eventType = event.getType();
-    if (
-      eventType !== ElementCallTerminateEventType &&
-      eventType !== LegacyGroupCallEventType
-    ) {
-      return;
-    }
+    if (eventType !== ElementCallTerminateEventType) return;
 
     const sender = event.getSender();
     const eventId = event.getId();
@@ -116,21 +101,6 @@ export class CallTerminationReader {
     const localUserId = this.client.getUserId();
     if (sender === localUserId) {
       logger.debug(`Ignoring self-sent termination event from ${sender}`);
-      return;
-    }
-
-    if (eventType === LegacyGroupCallEventType) {
-      const content = event.getContent<LegacyGroupCallEventContent>();
-      if (content["m.terminated"] !== LegacyGroupCallEndedReason) return;
-
-      const timestamp = event.getTs();
-      logger.info(`Legacy group call terminated by ${sender}`);
-      this.emittedEventIds.add(eventId);
-      this.terminationSubject$.next({
-        terminatedBy: sender,
-        reason: content["m.terminated"],
-        timestamp,
-      });
       return;
     }
 
