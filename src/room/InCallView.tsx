@@ -322,6 +322,7 @@ export const InCallView: FC<InCallViewProps> = ({
 
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState(defaultSettingsTab);
+  const [callTerminationFailed, setCallTerminationFailed] = useState(false);
 
   const openSettings = useCallback(
     () => setSettingsModalOpen(true),
@@ -465,6 +466,18 @@ export const InCallView: FC<InCallViewProps> = ({
         {t("common.reconnecting")}
       </Toast>
     </>
+  );
+  const onDismissCallTerminationFailedToast = useCallback(() => {
+    setCallTerminationFailed(false);
+  }, []);
+  const callTerminationFailedToast = (
+    <Toast
+      onDismiss={onDismissCallTerminationFailedToast}
+      open={callTerminationFailed}
+      modal={false}
+    >
+      {t("terminate_call_failed_local_leave")}
+    </Toast>
   );
 
   const earpieceOverlay = (
@@ -664,6 +677,7 @@ export const InCallView: FC<InCallViewProps> = ({
       onTerminate={() => {
         void vm.terminateCall().catch((error) => {
           logger.error("Failed to terminate call for all participants", error);
+          setCallTerminationFailed(true);
         });
       }}
       participantCount={participantCount}
@@ -729,6 +743,7 @@ export const InCallView: FC<InCallViewProps> = ({
       <CallEventAudioRenderer vm={vm} muted={muteAllAudio} />
       <ReactionsAudioRenderer vm={vm} muted={muteAllAudio} />
       {reconnectingToast}
+      {callTerminationFailedToast}
       {earpieceOverlay}
       <ReactionsOverlay vm={vm} />
       {footer}

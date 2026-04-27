@@ -13,7 +13,9 @@ import {
 } from "matrix-js-sdk";
 import {
   WidgetApi,
+  EventDirection,
   MatrixCapabilities,
+  WidgetEventCapability,
   WidgetApiToWidgetAction,
 } from "matrix-widget-api";
 
@@ -60,12 +62,39 @@ export interface WidgetHelpers {
   client: Promise<MatrixClient>;
 }
 
+const callTerminationWidgetCapabilities = [
+  WidgetEventCapability.forRoomEvent(
+    EventDirection.Send,
+    ElementCallTerminateEventType,
+  ).raw,
+  WidgetEventCapability.forRoomEvent(
+    EventDirection.Receive,
+    ElementCallTerminateEventType,
+  ).raw,
+  WidgetEventCapability.forStateEvent(
+    EventDirection.Send,
+    LegacyGroupCallEventType,
+  ).raw,
+  WidgetEventCapability.forStateEvent(
+    EventDirection.Receive,
+    LegacyGroupCallEventType,
+  ).raw,
+];
+
 /**
  * A point of access to the widget API, if the app is running as a widget. This
  * is initialized with `initializeWidget`. This should happen at the top level because the widget messaging
  * needs to be set up ASAP on load to ensure it doesn't miss any requests.
  */
 export let widget: WidgetHelpers | null;
+
+export const getMissingCallTerminationWidgetCapabilities = (): string[] => {
+  if (widget === null) return [];
+
+  return callTerminationWidgetCapabilities.filter(
+    (capability) => !widget!.api.hasCapability(capability),
+  );
+};
 
 /**
  * Should be called as soon as possible on app start. (In the initilizer before react)

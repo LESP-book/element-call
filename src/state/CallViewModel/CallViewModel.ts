@@ -99,7 +99,11 @@ import { MatrixKeyProvider } from "../../e2ee/matrixKeyProvider";
 import { type MuteStates } from "../MuteStates";
 import { getUrlParams } from "../../UrlParams";
 import { type ProcessorState } from "../../livekit/TrackProcessorContext";
-import { ElementWidgetActions, widget } from "../../widget";
+import {
+  ElementWidgetActions,
+  getMissingCallTerminationWidgetCapabilities,
+  widget,
+} from "../../widget";
 import {
   type GridLayoutMedia,
   type Layout,
@@ -1621,6 +1625,15 @@ export function createCallViewModel$(
     hangup: (): void => userHangup$.next(),
     terminateCall: async (): Promise<void> => {
       logger.info("Terminating call for all participants");
+      const missingWidgetCapabilities =
+        getMissingCallTerminationWidgetCapabilities();
+      if (missingWidgetCapabilities.length) {
+        logger.warn(
+          "Widget host is missing call termination capabilities",
+          missingWidgetCapabilities,
+        );
+      }
+
       const content: CallTerminateEventContent = {
         terminated_by: userId,
         timestamp: Date.now(),
@@ -1665,15 +1678,15 @@ export function createCallViewModel$(
           `Failed to send any call termination signal in room ${matrixRoom.roomId}`,
           terminationEventError ?? legacyTerminationError,
         );
+        userHangup$.next();
         throw terminationEventError ?? legacyTerminationError;
       }
 
       if (activeLegacyCalls.length && !sentLegacyTermination) {
-        logger.error(
-          `Failed to terminate legacy group call state ${LegacyGroupCallEventType} in room ${matrixRoom.roomId}`,
+        logger.warn(
+          `Failed to terminate legacy group call state ${LegacyGroupCallEventType} in room ${matrixRoom.roomId}; continuing because ${ElementCallTerminateEventType} was sent`,
           legacyTerminationError,
         );
-        throw legacyTerminationError;
       }
       // Also trigger local hangup
       userHangup$.next();

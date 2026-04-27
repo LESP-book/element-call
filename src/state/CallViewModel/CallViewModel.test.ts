@@ -350,7 +350,7 @@ describe("CallViewModel terminateCall", () => {
     });
   });
 
-  test("does not trigger local leave when sending the termination event fails", async () => {
+  test("triggers local leave when no termination signal can be sent", async () => {
     await withTerminatingCallViewModel(async (vm, rtcSession) => {
       const sendEvent = vi.mocked(rtcSession.room.client.sendEvent);
       const error = new Error("send failed");
@@ -371,7 +371,30 @@ describe("CallViewModel terminateCall", () => {
           timestamp: expect.any(Number),
         },
       );
-      expect(leaveReasons).toStrictEqual([]);
+      expect(leaveReasons).toStrictEqual(["user"]);
+    });
+  });
+
+  test("triggers local leave when the custom termination event succeeds but legacy termination fails", async () => {
+    await withTerminatingCallViewModel(async (vm, rtcSession) => {
+      const sendStateEvent = vi.mocked(rtcSession.room.client.sendStateEvent);
+      sendStateEvent.mockRejectedValueOnce(new Error("send state failed"));
+      Object.assign(rtcSession.room, {
+        currentState: {
+          getStateEvents: vi
+            .fn()
+            .mockReturnValue([makeActiveLegacyGroupCallEvent()]),
+        },
+      });
+      const leaveReasons: unknown[] = [];
+      const subscription = vm.leave$.subscribe((reason) =>
+        leaveReasons.push(reason),
+      );
+      onTestFinished(() => subscription.unsubscribe());
+
+      await vm.terminateCall();
+
+      expect(leaveReasons).toStrictEqual(["user"]);
     });
   });
 });
