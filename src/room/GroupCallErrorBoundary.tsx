@@ -74,7 +74,11 @@ const ErrorPage: FC<ErrorPageProps> = ({
   if (error instanceof ConnectionLostError) {
     actions.push({
       label: t("call_ended_view.reconnect_button"),
-      onClick: () => void recoveryActionHandler("reconnect"),
+      onClick: () => {
+        void recoveryActionHandler("reconnect").catch((e) => {
+          logger.error("Failed to recover call", e);
+        });
+      },
     });
   }
 

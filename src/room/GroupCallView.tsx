@@ -232,12 +232,14 @@ export const GroupCallView: FC<Props> = ({
       } catch (e) {
         if (e instanceof ElementCallError) {
           setExternalError(e);
+          throw e;
         } else {
           logger.error(`Unknown Error while entering RTC session`, e);
           const error = new UnknownCallError(
             e instanceof Error ? e : new Error("Unknown error", { cause: e }),
           );
           setExternalError(error);
+          throw error;
         }
       }
       return Promise.resolve();
@@ -246,12 +248,15 @@ export const GroupCallView: FC<Props> = ({
   );
 
   const recoverCall = useCallback(async (): Promise<void> => {
+    try {
+      await enterRTCSessionOrError(rtcSession);
+    } catch (e) {
+      logger.error("Error re-entering RTC session", e);
+      throw e;
+    }
     setExternalError(null);
     setLeft(false);
     setRecoveryNonce((value) => value + 1);
-    await enterRTCSessionOrError(rtcSession).catch((e) => {
-      logger.error("Error re-entering RTC session", e);
-    });
   }, [enterRTCSessionOrError, rtcSession]);
 
   useEffect(() => {

@@ -130,6 +130,7 @@ beforeEach(() => {
 function createGroupCallView(
   widget: WidgetHelpers | null,
   joined = true,
+  setJoined: (value: boolean) => void = (): void => {},
 ): {
   rtcSession: MatrixRTCSession;
   getByText: ReturnType<typeof render>["getByText"];
@@ -182,8 +183,8 @@ function createGroupCallView(
               muteStates={muteState}
               widget={widget}
               // TODO-MULTI-SFU: Make joined and setJoined work
-              joined={true}
-              setJoined={function (value: boolean): void {}}
+              joined={joined}
+              setJoined={setJoined}
             />
           </ProcessorProvider>
         </MediaDevicesContext>
@@ -493,4 +494,42 @@ test("successful recovery resets the automatic reconnect budget", async () => {
     expect(screen.getByTestId("active_call_instance")).toHaveTextContent("6"),
   );
   expect(screen.queryByRole("button", { name: "Reconnect" })).toBeNull();
+});
+
+test("failed manual recovery keeps the reconnect error visible", async () => {
+  const user = userEvent.setup();
+  let failRecovery = false;
+  const setJoined = vi.fn((value: boolean) => {
+    if (failRecovery && value) {
+      throw new Error("Failed to rejoin");
+    }
+  });
+  const { rtcSession } = createGroupCallView(null, true, setJoined);
+
+  await waitFor(() =>
+    expect(screen.getByTestId("active_call_instance")).toHaveTextContent("1"),
+  );
+
+  for (const expectedInstance of ["2", "3", "4"]) {
+    await act(() =>
+      rtcSession.emit(MatrixRTCSessionEvent.MembershipManagerError, undefined),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("active_call_instance")).toHaveTextContent(
+        expectedInstance,
+      ),
+    );
+  }
+
+  await act(() =>
+    rtcSession.emit(MatrixRTCSessionEvent.MembershipManagerError, undefined),
+  );
+  await waitFor(() => screen.getByRole("button", { name: "Reconnect" }));
+
+  failRecovery = true;
+  await user.click(screen.getByRole("button", { name: "Reconnect" }));
+
+  await waitFor(() => expect(setJoined).toHaveBeenCalledWith(true));
+  expect(screen.getByRole("button", { name: "Reconnect" })).toBeInTheDocument();
+  expect(screen.queryByTestId("active_call_instance")).toBeNull();
 });
