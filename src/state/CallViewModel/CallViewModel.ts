@@ -13,11 +13,7 @@ import {
   type Room as LivekitRoom,
   type RoomOptions,
 } from "livekit-client";
-import {
-  EventType,
-  type MatrixEvent,
-  type Room as MatrixRoom,
-} from "matrix-js-sdk";
+import { type Room as MatrixRoom } from "matrix-js-sdk";
 import {
   BehaviorSubject,
   catchError,
@@ -50,10 +46,6 @@ import {
   type LivekitTransportConfig,
   type MatrixRTCSession,
 } from "matrix-js-sdk/lib/matrixrtc";
-import {
-  GroupCallTerminationReason,
-  type IGroupCallRoomState,
-} from "matrix-js-sdk/lib/webrtc/groupCall";
 import { type IWidgetApiRequest } from "matrix-widget-api";
 import { type CallMembershipIdentityParts } from "matrix-js-sdk/lib/matrixrtc/EncryptionManager";
 import { v4 as uuidv4 } from "uuid";
@@ -62,7 +54,6 @@ import { type IMembershipManager } from "matrix-js-sdk/lib/matrixrtc/IMembership
 import {
   ElementCallTerminateEventType,
   type CallTerminateEventContent,
-  LegacyGroupCallEventType,
   type TerminationEvent,
 } from "../../callTermination";
 import {
@@ -399,47 +390,6 @@ export interface CallViewModel {
    * Shortcut for not requireing to parse and combine connectionState.matrix and connectionState.livekit
    */
   connected$: Behavior<boolean>;
-}
-
-function getActiveLegacyGroupCallEvents(matrixRoom: MatrixRoom): MatrixEvent[] {
-  const events = matrixRoom.currentState?.getStateEvents(
-    EventType.GroupCallPrefix,
-  );
-  if (!Array.isArray(events)) return [];
-
-  return events.filter((event) => {
-    const content = event.getContent<IGroupCallRoomState>();
-    return (
-      event.getStateKey() !== undefined &&
-      !event.isRedacted() &&
-      content["m.terminated"] === undefined
-    );
-  });
-}
-
-async function sendLegacyGroupCallTerminationEvents(
-  matrixRoom: MatrixRoom,
-): Promise<number> {
-  const activeLegacyCalls = getActiveLegacyGroupCallEvents(matrixRoom);
-
-  await Promise.all(
-    activeLegacyCalls.map(async (event) => {
-      const stateKey = event.getStateKey();
-      if (stateKey === undefined) return;
-
-      await matrixRoom.client.sendStateEvent(
-        matrixRoom.roomId,
-        EventType.GroupCallPrefix,
-        {
-          ...event.getContent<IGroupCallRoomState>(),
-          "m.terminated": GroupCallTerminationReason.CallEnded,
-        },
-        stateKey,
-      );
-    }),
-  );
-
-  return activeLegacyCalls.length;
 }
 
 /**
@@ -1625,11 +1575,6 @@ export function createCallViewModel$(
         terminated_by: userId,
         timestamp: Date.now(),
       };
-      const activeLegacyCalls = getActiveLegacyGroupCallEvents(matrixRoom);
-      let sentTerminationEvent = false;
-      let sentLegacyTermination = false;
-      let terminationEventError: unknown;
-      let legacyTerminationError: unknown;
 
       try {
         await client.sendEvent(
@@ -1637,46 +1582,15 @@ export function createCallViewModel$(
           ElementCallTerminateEventType,
           content,
         );
-        sentTerminationEvent = true;
       } catch (error) {
-        terminationEventError = error;
         logger.warn(
           `Failed to send call termination event ${ElementCallTerminateEventType} in room ${matrixRoom.roomId}`,
           error,
         );
+        throw error;
+      } finally {
+        userHangup$.next();
       }
-
-      try {
-        sentLegacyTermination =
-          (await sendLegacyGroupCallTerminationEvents(matrixRoom)) > 0;
-      } catch (error) {
-        legacyTerminationError = error;
-        logger.warn(
-          `Failed to send legacy group call termination state ${LegacyGroupCallEventType} in room ${matrixRoom.roomId}`,
-          error,
-        );
-      }
-
-      if (
-        !sentTerminationEvent &&
-        (!activeLegacyCalls.length || !sentLegacyTermination)
-      ) {
-        logger.error(
-          `Failed to send any call termination signal in room ${matrixRoom.roomId}`,
-          terminationEventError ?? legacyTerminationError,
-        );
-        throw terminationEventError ?? legacyTerminationError;
-      }
-
-      if (activeLegacyCalls.length && !sentLegacyTermination) {
-        logger.error(
-          `Failed to terminate legacy group call state ${LegacyGroupCallEventType} in room ${matrixRoom.roomId}`,
-          legacyTerminationError,
-        );
-        throw legacyTerminationError;
-      }
-      // Also trigger local hangup
-      userHangup$.next();
     },
     terminated$: termination$,
     join: localMembership.requestJoinAndPublish,

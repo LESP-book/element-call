@@ -22,10 +22,7 @@ import { LazyEventEmitter } from "./LazyEventEmitter";
 import { getUrlParams } from "./UrlParams";
 import { Config } from "./config/Config";
 import { ElementCallReactionEventType } from "./reactions";
-import {
-  ElementCallTerminateEventType,
-  LegacyGroupCallEventType,
-} from "./callTermination";
+import { ElementCallTerminateEventType } from "./callTermination";
 
 // Subset of the actions in element-web
 export enum ElementWidgetActions {
@@ -139,7 +136,6 @@ export const initializeWidget = (
       ];
 
       const sendState = [
-        { eventType: LegacyGroupCallEventType },
         userId, // Legacy call membership events
         `_${userId}_${deviceId}_${rtcApplication}`, // Session membership events
         `${userId}_${deviceId}_${rtcApplication}`, // The above with no leading underscore, for room versions whose auth rules allow it
@@ -156,7 +152,6 @@ export const initializeWidget = (
         { eventType: EventType.RoomName },
         { eventType: EventType.RoomMember },
         { eventType: EventType.RoomEncryption },
-        { eventType: LegacyGroupCallEventType },
         { eventType: EventType.GroupCallMemberPrefix },
       ];
 
