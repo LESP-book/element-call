@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 Please see LICENSE in the repository root for full details.
 */
 
-import { test, vi, onTestFinished, it, describe } from "vitest";
+import { test, vi, onTestFinished, it, describe, expect } from "vitest";
 import {
   BehaviorSubject,
   combineLatest,
@@ -64,6 +64,7 @@ import { type Behavior, constant } from "../Behavior.ts";
 import { withCallViewModel as withCallViewModelInMode } from "./CallViewModelTestUtils.ts";
 import { MatrixRTCMode } from "../../settings/settings.ts";
 import { initializeWidget } from "../../widget.ts";
+import { ElementCallTerminateEventType } from "../../callTermination";
 
 initializeWidget();
 
@@ -104,7 +105,6 @@ const dave = mockMatrixRoomMember(daveRtcMember, { rawDisplayName: "Dave" });
 
 const daveId = `${dave.userId}:${daveRtcMember.deviceId}`;
 
-const localParticipant = mockLocalParticipant({ identity: "" });
 const aliceSharingScreen = mockRemoteParticipant({
   identity: aliceId,
   isScreenShareEnabled: true,
@@ -115,6 +115,7 @@ const bobSharingScreen = mockRemoteParticipant({
   isScreenShareEnabled: true,
 });
 const daveParticipant = mockRemoteParticipant({ identity: daveId });
+const localParticipant = mockLocalParticipant({ identity: "" });
 
 export interface GridLayoutSummary {
   type: "grid";
@@ -232,6 +233,83 @@ function mockRingEvent(
     sender,
   } as unknown as { event_id: string } & IRTCNotificationContent;
 }
+
+describe("CallViewModel terminateCall", () => {
+  const withTerminatingCallViewModel = async (
+    continuation: (
+      ...args: Parameters<
+        Parameters<ReturnType<typeof withCallViewModelInMode>>[1]
+      >
+    ) => Promise<void>,
+  ): Promise<void> =>
+    new Promise((resolve, reject) => {
+      try {
+        withCallViewModelInMode(MatrixRTCMode.Legacy)(
+          {},
+          (vm, rtcSession, subjects, setSyncState) => {
+            try {
+              void continuation(vm, rtcSession, subjects, setSyncState).then(
+                resolve,
+                reject,
+              );
+            } catch (error) {
+              reject(error);
+            }
+          },
+        );
+      } catch (error) {
+        reject(error);
+      }
+    });
+
+  test("sends a termination event and triggers local leave", async () => {
+    await withTerminatingCallViewModel(async (vm, rtcSession) => {
+      const sendEvent = vi.mocked(rtcSession.room.client.sendEvent);
+      const leaveReasons: unknown[] = [];
+      const subscription = vm.leave$.subscribe((reason) =>
+        leaveReasons.push(reason),
+      );
+      onTestFinished(() => subscription.unsubscribe());
+
+      await vm.terminateCall();
+
+      expect(sendEvent).toHaveBeenCalledWith(
+        rtcSession.room.roomId,
+        ElementCallTerminateEventType,
+        {
+          terminated_by: localRtcMember.userId,
+          timestamp: expect.any(Number),
+        },
+      );
+      expect(leaveReasons).toStrictEqual(["user"]);
+    });
+  });
+
+  test("does not trigger local leave when sending the termination event fails", async () => {
+    await withTerminatingCallViewModel(async (vm, rtcSession) => {
+      const sendEvent = vi.mocked(rtcSession.room.client.sendEvent);
+      const error = new Error("send failed");
+      sendEvent.mockRejectedValueOnce(error);
+      const leaveReasons: unknown[] = [];
+      const subscription = vm.leave$.subscribe((reason) =>
+        leaveReasons.push(reason),
+      );
+      onTestFinished(() => subscription.unsubscribe());
+
+      await expect(vm.terminateCall()).rejects.toBe(error);
+
+      expect(sendEvent).toHaveBeenCalledWith(
+        rtcSession.room.roomId,
+        ElementCallTerminateEventType,
+        {
+          terminated_by: localRtcMember.userId,
+          timestamp: expect.any(Number),
+        },
+      );
+      expect(leaveReasons).toStrictEqual([]);
+    });
+  });
+});
 
 describe.each([
   [MatrixRTCMode.Legacy],
@@ -1252,43 +1330,64 @@ describe.each([
   });
 
   it.skip("media tracks are paused while reconnecting to MatrixRTC", () => {
+    // TODO: This integration test mutates the shared localParticipant fixture
+    // out of band and does not deterministically drive the LocalMember
+    // participant$/homeserverConnected path. Re-add this as a focused
+    // LocalMember test with controllable inputs instead.
     withTestScheduler(({ schedule, expectObservable }) => {
-      const trackRunning$ = new BehaviorSubject(true);
+      const cameraTrackRunning$ = new BehaviorSubject(true);
+      const screenTrackRunning$ = new BehaviorSubject(true);
       const originalPublications = localParticipant.trackPublications;
+      const makePauseableTrack = (
+        running$: BehaviorSubject<boolean>,
+      ): {
+        readonly isUpstreamPaused: boolean;
+        pauseUpstream: () => Promise<void>;
+        resumeUpstream: () => Promise<void>;
+      } =>
+        new (class {
+          public get isUpstreamPaused(): boolean {
+            return !running$.value;
+          }
+          public async pauseUpstream(): Promise<void> {
+            running$.next(false);
+            return Promise.resolve();
+          }
+          public async resumeUpstream(): Promise<void> {
+            running$.next(true);
+            return Promise.resolve();
+          }
+        })();
       localParticipant.trackPublications = new Map([
         [
-          "video",
+          "camera",
           {
-            track: new (class {
-              public get isUpstreamPaused(): boolean {
-                return !trackRunning$.value;
-              }
-              public async pauseUpstream(): Promise<void> {
-                trackRunning$.next(false);
-                return Promise.resolve();
-              }
-              public async resumeUpstream(): Promise<void> {
-                trackRunning$.next(true);
-                return Promise.resolve();
-              }
-            })(),
+            track: makePauseableTrack(cameraTrackRunning$),
+          } as unknown as LocalTrackPublication,
+        ],
+        [
+          "screen",
+          {
+            track: makePauseableTrack(screenTrackRunning$),
           } as unknown as LocalTrackPublication,
         ],
       ]);
       onTestFinished(() => {
         localParticipant.trackPublications = originalPublications;
       });
+      const publishedTracksRunning$ = combineLatest([
+        cameraTrackRunning$,
+        screenTrackRunning$,
+      ]).pipe(
+        map(([cameraRunning, screenRunning]) => cameraRunning && screenRunning),
+      );
 
-      // There are three indicators that the client might be disconnected from
-      // MatrixRTC: whether the sync loop is connected, whether the membership is
-      // present in local room state, and whether the membership manager thinks
-      // we've hit the timeout for the delayed leave event. Let's test all
-      // combinations of these conditions.
       const syncingMarbles = "             nyny----n--y";
       const membershipStatusMarbles = "    y---ny-n-yn-y";
       const probablyLeftMarbles = "        n-----y-ny---n";
       const expectedReconnectingMarbles = "n-ynyny------n";
       const expectedTrackRunningMarbles = "nynynyn------y";
+      const noop = (): void => {};
 
       withCallViewModel(
         { initialSyncState: SyncState.Reconnecting },
@@ -1301,6 +1400,10 @@ describe.each([
             y: () => {
               rtcSession.membershipStatus = Status.Connected;
             },
+            n: () => {
+              rtcSession.membershipStatus = Status.Unknown;
+            },
+            "-": noop,
           });
           schedule(probablyLeftMarbles, {
             y: () => {
@@ -1314,7 +1417,7 @@ describe.each([
             expectedReconnectingMarbles,
             yesNo,
           );
-          expectObservable(trackRunning$).toBe(
+          expectObservable(publishedTracksRunning$).toBe(
             expectedTrackRunningMarbles,
             yesNo,
           );

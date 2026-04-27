@@ -77,7 +77,6 @@ function createMockMuteState(enabled$: BehaviorSubject<boolean>): {
       currentHandler = (enabled: boolean): void => {};
     }),
   };
-  // forward enabled$ emissions to the current handler
   enabled$.subscribe((enabled) => {
     logger.info(`MockMuteState: enabled changed to ${enabled}`);
     currentHandler(enabled);
@@ -92,7 +91,6 @@ let localParticipant: LocalParticipant;
 let audioEnabled$: BehaviorSubject<boolean>;
 let videoEnabled$: BehaviorSubject<boolean>;
 let trackPublications: LocalTrackPublication[];
-// use it to control when track creation resolves, default to resolved
 let createTrackLock: Promise<void>;
 
 beforeEach(() => {
@@ -209,7 +207,6 @@ describe("Publisher", () => {
   });
 
   it("should unsetHandler and stop tracks on destroy", async () => {
-    // setup all spies
     const unsetVideoSpy = vi.spyOn(
       (
         publisher as unknown as {
@@ -231,7 +228,6 @@ describe("Publisher", () => {
       "end",
     );
     const stopTracksSpy = vi.spyOn(publisher, "stopTracks");
-    // destroy publisher
     await publisher.destroy();
 
     expect(stopTracksSpy).toHaveBeenCalledOnce();
@@ -253,8 +249,6 @@ describe("Publisher", () => {
     await flushPromises();
 
     expect(enableCameraAndMicrophoneSpy).toHaveBeenCalled();
-
-    // It should create both at once
     expect(createTracksSpy).toHaveBeenCalledWith({
       audio: true,
       video: true,
@@ -265,7 +259,6 @@ describe("Publisher", () => {
     audioEnabled$.next(true);
     await publisher.createAndSetupTracks();
 
-    // The track should be created and paused
     expect(localParticipant.createTracks).toHaveBeenCalledWith({
       audio: true,
       video: undefined,
@@ -285,15 +278,55 @@ describe("Publisher", () => {
   it("Ensure resume upstream when published is called", async () => {
     videoEnabled$.next(true);
     await publisher.createAndSetupTracks();
-    // await flushPromises();
     await publisher.startPublishing();
 
     const track = localParticipant.getTrackPublication(
       Track.Source.Camera,
     )?.track;
     expect(track).toBeDefined();
-    // expect(track.pauseUpstream).toHaveBeenCalled();
     expect(track!.isUpstreamPaused).toBe(false);
+  });
+
+  it("resumes screenshare upstream when publishing starts again", async () => {
+    const screenTrack = createMockLocalTrack(Track.Source.ScreenShare);
+    await screenTrack.pauseUpstream();
+    trackPublications.push({
+      track: screenTrack,
+      source: Track.Source.ScreenShare,
+      mute: screenTrack.mute,
+      unmute: screenTrack.unmute,
+    } as Partial<LocalTrackPublication> as LocalTrackPublication);
+
+    await publisher.startPublishing();
+
+    expect(screenTrack.resumeUpstream).toHaveBeenCalledOnce();
+    expect(screenTrack.isUpstreamPaused).toBe(false);
+  });
+
+  it("keeps camera behavior while also resuming screenshare upstream", async () => {
+    const cameraTrack = createMockLocalTrack(Track.Source.Camera);
+    const screenTrack = createMockLocalTrack(Track.Source.ScreenShare);
+    await cameraTrack.pauseUpstream();
+    await screenTrack.pauseUpstream();
+    trackPublications.push(
+      {
+        track: cameraTrack,
+        source: Track.Source.Camera,
+        mute: cameraTrack.mute,
+        unmute: cameraTrack.unmute,
+      } as Partial<LocalTrackPublication> as LocalTrackPublication,
+      {
+        track: screenTrack,
+        source: Track.Source.ScreenShare,
+        mute: screenTrack.mute,
+        unmute: screenTrack.unmute,
+      } as Partial<LocalTrackPublication> as LocalTrackPublication,
+    );
+
+    await publisher.startPublishing();
+
+    expect(cameraTrack.resumeUpstream).toHaveBeenCalledOnce();
+    expect(screenTrack.resumeUpstream).toHaveBeenCalledOnce();
   });
 
   describe("Mute states", () => {
@@ -315,7 +348,6 @@ describe("Publisher", () => {
       { mutes: { audioEnabled: true, videoEnabled: false } },
       { mutes: { audioEnabled: true, videoEnabled: false } },
     ])("only create the tracks that are unmuted $mutes", async ({ mutes }) => {
-      // Ensure all muted
       audioEnabled$.next(mutes.audioEnabled);
       videoEnabled$.next(mutes.videoEnabled);
 
@@ -342,18 +374,7 @@ describe("Publisher", () => {
 });
 
 describe("Bug fix", () => {
-  // There is a race condition when creating and publishing tracks while the mute state changes.
-  // This race condition could cause tracks to be published even though they are muted at the
-  // beginning of a call coming from lobby.
-  // This is caused by our stack using manually the low level API to create and publish tracks,
-  // but also using the higher level setMicrophoneEnabled and setCameraEnabled functions that also create
-  // and publish tracks, and managing pending publications.
-  // Race is as follow, on creation of the Publisher we create the tracks then publish them.
-  // If in the middle of that process the mute state changes:
-  //  - the `setMicrophoneEnabled` will be no-op because it is not aware of our created track and can't see any pending publication
-  //  - If start publication is requested it will publish the track even though there was a mute request.
   it("wrongly publish tracks while muted", async () => {
-    // setLogLevel(`debug`);
     const publisher = new Publisher(
       connection,
       mockMediaDevices({}),
@@ -366,13 +387,11 @@ describe("Bug fix", () => {
     const resolvers = Promise.withResolvers<void>();
     createTrackLock = resolvers.promise;
 
-    // Initially the audio is unmuted, so creating tracks should publish the audio track
     const createTracks = publisher.createAndSetupTracks();
     void publisher.startPublishing();
     void createTracks.then(() => {
       void publisher.startPublishing();
     });
-    // now mute the audio before allowing track creation to complete
     audioEnabled$.next(false);
     resolvers.resolve(undefined);
     await createTracks;

@@ -12,6 +12,7 @@ import { getUrlParams } from "./UrlParams";
 import { initializeWidget, widget } from "./widget";
 import { Config } from "./config/Config";
 import { ElementCallReactionEventType } from "./reactions";
+import { ElementCallTerminateEventType } from "./callTermination";
 
 vi.mock("matrix-js-sdk", { spy: true });
 const createRoomWidgetClientSpy = vi.mocked(createRoomWidgetClient);
@@ -64,6 +65,7 @@ describe("widget", () => {
       EventType.Reaction,
       EventType.RoomRedaction,
       ElementCallReactionEventType,
+      ElementCallTerminateEventType,
       EventType.RTCDecline,
       EventType.RTCMembership,
     ];

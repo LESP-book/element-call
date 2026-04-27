@@ -135,7 +135,11 @@ export function withCallViewModel(mode: MatrixRTCMode) {
         public getAccessToken(): string | null {
           return "a-token";
         }
-      })() as Partial<MatrixClient> as MatrixClient,
+
+        public sendEvent = vi
+          .fn()
+          .mockResolvedValue({ event_id: "$fake:event" });
+      })() as unknown as MatrixClient,
       getMembers: () => roomMembers,
       getMembersWithMembership: () => roomMembers,
     });
