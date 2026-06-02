@@ -17,25 +17,24 @@ import { createHtmlPlugin } from "vite-plugin-html";
 
 import { codecovVitePlugin } from "@codecov/vite-plugin";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
+import { nodePolyfills } from "vite-plugin-node-polyfills";
+import wasm from "vite-plugin-wasm";
 
 import react from "@vitejs/plugin-react";
 import { realpathSync } from "fs";
 import * as fs from "node:fs";
 
-// https://vitejs.dev/config/
-// Modified type helper from defineConfig to allow for packageType (see defineConfig from vite)
-export default ({
+export const vitePluginsConfig = ({
   mode,
-  packageType,
-}: ConfigEnv & { packageType?: "full" | "embedded" }): UserConfig => {
+}: Pick<ConfigEnv, "mode">): UserConfig => {
   const env = loadEnv(mode, process.cwd());
-  // Environment variables with the VITE_ prefix are accessible at runtime.
-  // So, we set this to allow for build/package specific behavior.
-  // In future we might be able to do what is needed via code splitting at
-  // build time.
-  process.env.VITE_PACKAGE = packageType ?? "full";
   const plugins: PluginOption[] = [
     react(),
+    wasm(),
+    nodePolyfills({
+      // Enables the 'events' module, which is required by the matrix-js-sdk
+      include: ["events"],
+    }),
     svgrPlugin({
       svgrOptions: {
         // This enables ref forwarding on SVGR components, which is needed, for
@@ -43,7 +42,6 @@ export default ({
         ref: true,
       },
     }),
-
     codecovVitePlugin({
       enableBundleAnalysis: process.env.CODECOV_TOKEN !== undefined,
       bundleName: "element-call",
@@ -66,7 +64,7 @@ export default ({
     );
   }
 
-  if (!process.env.STORYBOOK) {
+  if (!process.env.STORYBOOK && !process.env.VITEST) {
     plugins.push(
       createHtmlPlugin({
         entry: "src/main.tsx",
@@ -79,6 +77,20 @@ export default ({
       }),
     );
   }
+
+  return { plugins };
+};
+// https://vitejs.dev/config/
+// Modified type helper from defineConfig to allow for packageType (see defineConfig from vite)
+export default ({
+  mode,
+  packageType,
+}: ConfigEnv & { packageType?: "full" | "embedded" }): UserConfig => {
+  // Environment variables with the VITE_ prefix are accessible at runtime.
+  // So, we set this to allow for build/package specific behavior.
+  // In future we might be able to do what is needed via code splitting at
+  // build time.
+  process.env.VITE_PACKAGE = packageType ?? "full";
 
   // The crypto WASM module is imported dynamically. Since it's common
   // for developers to use a linked copy of matrix-js-sdk or Rust
@@ -96,7 +108,9 @@ export default ({
   console.log("Allowed vite paths:", allow);
 
   return {
+    ...vitePluginsConfig({ mode }),
     server: {
+      host: true,
       port: 3000,
       fs: { allow },
       https: {
@@ -130,7 +144,6 @@ export default ({
         },
       },
     },
-    plugins,
     resolve: {
       alias: {
         // matrix-widget-api has its transpiled lib/index.js as its entry point,
@@ -149,13 +162,6 @@ export default ({
         "@radix-ui/react-focus-guards",
         "@radix-ui/react-dismissable-layer",
       ],
-    },
-    // Vite is using esbuild in development mode, which doesn't work with the wasm loader
-    // in matrix-sdk-crypto-wasm, so we need to exclude it here. This doesn't affect the
-    // production build (which uses rollup) which still works as expected.
-    // https://vite.dev/guide/why.html#why-not-bundle-with-esbuild
-    optimizeDeps: {
-      exclude: ["@matrix-org/matrix-sdk-crypto-wasm"],
     },
   };
 };

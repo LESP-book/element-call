@@ -95,7 +95,6 @@ interface Props {
   confineToRoom: boolean;
   preload: UrlParams["preload"];
   skipLobby: UrlParams["skipLobby"];
-  header: HeaderStyle;
   rtcSession: MatrixRTCSession;
   joined: boolean;
   setJoined: (value: boolean) => void;
@@ -109,7 +108,6 @@ export const GroupCallView: FC<Props> = ({
   confineToRoom,
   preload,
   skipLobby,
-  header,
   rtcSession,
   joined,
   setJoined,
@@ -190,6 +188,7 @@ export const GroupCallView: FC<Props> = ({
     perParticipantE2EE,
     returnToLobby,
     password: passwordFromUrl,
+    header,
   } = useUrlParams();
   const e2eeSystem = useRoomEncryptionSystem(room.roomId);
 
@@ -345,7 +344,13 @@ export const GroupCallView: FC<Props> = ({
   // TODO split this into leave and onDisconnect
   const onLeft = useCallback(
     (
-      reason: "timeout" | "user" | "allOthersLeft" | "decline" | "terminated" | "error",
+      reason:
+        | "timeout"
+        | "user"
+        | "allOthersLeft"
+        | "decline"
+        | "terminated"
+        | "error",
     ): void => {
       let playSound: CallEventSounds = "left";
       if (reason === "timeout" || reason === "decline") playSound = reason;
@@ -467,7 +472,7 @@ export const GroupCallView: FC<Props> = ({
         muteStates={muteStates}
         onEnter={() => setJoined(true)}
         confineToRoom={confineToRoom}
-        hideHeader={header === HeaderStyle.None}
+        hideHeader={header !== HeaderStyle.Standard}
         participantCount={participantCount}
         onShareClick={onShareClick}
       />
@@ -493,7 +498,6 @@ export const GroupCallView: FC<Props> = ({
           rtcSession={rtcSession as MatrixRTCSession}
           matrixRoom={room}
           onLeft={onLeft}
-          header={header}
           muteStates={muteStates}
           e2eeSystem={e2eeSystem}
           //otelGroupCallMembership={otelGroupCallMembership}
