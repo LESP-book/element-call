@@ -8,14 +8,14 @@ Please see LICENSE in the repository root for full details.
 
 import {
   ConnectionState,
-  type LocalParticipant,
   type Participant,
   ParticipantEvent,
   type RemoteParticipant,
   type Room as LivekitRoom,
+  type TrackPublication,
 } from "livekit-client";
 import { SyncState } from "matrix-js-sdk/lib/sync";
-import { BehaviorSubject, type Observable, map, of, NEVER } from "rxjs";
+import { BehaviorSubject, combineLatest, map, NEVER, of } from "rxjs";
 import { onTestFinished, vi } from "vitest";
 import { ClientEvent, type RoomMember, type MatrixClient } from "matrix-js-sdk";
 import EventEmitter from "events";
@@ -24,14 +24,16 @@ import * as ComponentsCore from "@livekit/components-core";
 import type { CallMembership } from "matrix-js-sdk/lib/matrixrtc";
 import { E2eeType } from "../../e2ee/e2eeType";
 import { type RaisedHandInfo, type ReactionInfo } from "../../reactions";
-import { type TerminationEvent } from "../../callTermination";
 import {
   type CallViewModel,
   createCallViewModel$,
   type CallViewModelOptions,
 } from "./CallViewModel";
 import {
+  exampleSfuConfig,
+  exampleTransport,
   mockConfig,
+  MockConnection,
   mockLivekitRoom,
   mockLocalParticipant,
   mockMatrixRoom,
@@ -69,13 +71,15 @@ export interface CallViewModelInputs {
   rtcMembers$: Behavior<Partial<CallMembership>[]>;
   roomMembers: RoomMember[];
   livekitConnectionState$: Behavior<ConnectionState>;
-  speaking: Map<Participant, Observable<boolean>>;
+  speaking: Map<Participant, Behavior<boolean>>;
+  videoEnabled: Map<Participant, Behavior<boolean>>;
+  sharingScreen: Map<Participant, Behavior<boolean>>;
   mediaDevices: MediaDevices;
   initialSyncState: SyncState;
   windowSize$: Behavior<{ width: number; height: number }>;
 }
 
-const localParticipant = mockLocalParticipant({ identity: "" });
+export const localParticipant = mockLocalParticipant({ identity: "" });
 
 export function withCallViewModel(mode: MatrixRTCMode) {
   return (
@@ -95,6 +99,8 @@ export function withCallViewModel(mode: MatrixRTCMode) {
         ConnectionState.Connected,
       ),
       speaking = new Map(),
+      videoEnabled = new Map(),
+      sharingScreen = new Map(),
       mediaDevices = mockMediaDevices({}),
       initialSyncState = SyncState.Syncing,
       windowSize$ = constant({ width: 1000, height: 800 }),
@@ -135,15 +141,7 @@ export function withCallViewModel(mode: MatrixRTCMode) {
         public getAccessToken(): string | null {
           return "a-token";
         }
-
-        public sendEvent = vi
-          .fn()
-          .mockResolvedValue({ event_id: "$fake:event" });
-
-        public sendStateEvent = vi
-          .fn()
-          .mockResolvedValue({ event_id: "$fake:event" });
-      })() as unknown as MatrixClient,
+      })() as Partial<MatrixClient> as MatrixClient,
       getMembers: () => roomMembers,
       getMembersWithMembership: () => roomMembers,
     });
@@ -155,21 +153,35 @@ export function withCallViewModel(mode: MatrixRTCMode) {
       .mockReturnValue(remoteParticipants$);
     const mediaSpy = vi
       .spyOn(ComponentsCore, "observeParticipantMedia")
-      .mockImplementation((p) =>
-        of({ participant: p } as Partial<
-          ComponentsCore.ParticipantMedia<LocalParticipant>
-        > as ComponentsCore.ParticipantMedia<LocalParticipant>),
-      );
+      .mockImplementation((p) => {
+        return (videoEnabled.get(p) ?? constant(false)).pipe(
+          map((videoEnabled) => ({
+            participant: p,
+            isMicrophoneEnabled: false,
+            isCameraEnabled: videoEnabled,
+            isScreenShareEnabled: false,
+            cameraTrack: {
+              isMuted: !videoEnabled,
+            } as unknown as TrackPublication,
+          })),
+        );
+      });
     const eventsSpy = vi
       .spyOn(ComponentsCore, "observeParticipantEvents")
       .mockImplementation((p, ...eventTypes) => {
-        if (eventTypes.includes(ParticipantEvent.IsSpeakingChanged)) {
-          return (speaking.get(p) ?? of(false)).pipe(
-            map((s): Participant => ({ ...p, isSpeaking: s }) as Participant),
-          );
-        } else {
-          return of(p);
-        }
+        return combineLatest([
+          (eventTypes.includes(ParticipantEvent.IsSpeakingChanged) &&
+            speaking.get(p)) ||
+            constant(false),
+          (eventTypes.includes(ParticipantEvent.TrackPublished) &&
+            sharingScreen.get(p)) ||
+            constant(false),
+        ]).pipe(
+          map(
+            ([isSpeaking, isScreenShareEnabled]) =>
+              ({ ...p, isSpeaking, isScreenShareEnabled }) as Participant,
+          ),
+        );
       });
 
     const roomEventSelectorSpy = vi
@@ -180,8 +192,13 @@ export function withCallViewModel(mode: MatrixRTCMode) {
       {},
     );
     const reactions$ = new BehaviorSubject<Record<string, ReactionInfo>>({});
-    // Use NEVER for termination$ since we don't need to test termination in most tests
-    const termination$ = NEVER as Observable<TerminationEvent>;
+
+    const livekitRoomFactory = (): LivekitRoom =>
+      mockLivekitRoom({
+        localParticipant,
+        disconnect: async () => Promise.resolve(),
+        setE2EEEnabled: async () => Promise.resolve(),
+      });
 
     const vm = createCallViewModel$(
       testScope(),
@@ -192,20 +209,44 @@ export function withCallViewModel(mode: MatrixRTCMode) {
       {
         encryptionSystem: { kind: E2eeType.PER_PARTICIPANT },
         autoLeaveWhenOthersLeft: false,
-        livekitRoomFactory: (): LivekitRoom =>
-          mockLivekitRoom({
-            localParticipant,
-            disconnect: async () => Promise.resolve(),
-            setE2EEEnabled: async () => Promise.resolve(),
-          }),
+        livekitRoomFactory,
         connectionState$,
         windowSize$,
+        localTransport: {
+          active$: constant({
+            transport: exampleTransport,
+            sfuConfig: exampleSfuConfig,
+          }),
+          advertised$: constant(exampleTransport),
+        },
+        connectionFactory: {
+          createConnection(
+            scope,
+            transport,
+            ownMembershipIdentity,
+            logger,
+            sfuConfig,
+          ) {
+            return new MockConnection(
+              {
+                scope,
+                transport,
+                ownMembershipIdentity,
+                existingSFUConfig: sfuConfig,
+                client: room.client,
+                roomId: room.roomId,
+                livekitRoomFactory,
+              },
+              logger,
+            );
+          },
+        },
         matrixRTCMode$: constant(mode),
         ...options,
       },
       raisedHands$,
       reactions$,
-      termination$,
+      NEVER,
       new BehaviorSubject<ProcessorState>({
         processor: undefined,
         supported: undefined,

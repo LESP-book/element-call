@@ -1,304 +1,611 @@
 {
-  "version": "1.0.0",
-  "timestamp": "2026-01-21T02:48:54+0800",
+  "version": "1.1.0",
+  "timestamp": "2026-04-21T02:21:23+08:00",
   "project": {
     "name": "element-call",
-    "description": "基于 Matrix 协议的去中心化视频会议解决方案",
-    "repository": "https://github.com/element-hq/element-call",
+    "summary": "element-call",
+    "description": "基于 Matrix 协议的去中心化、联邦化视频会议解决方案",
     "language": "TypeScript",
-    "framework": "React 19 + Vite 7"
+    "framework": "React 19 + Vite",
+    "workspaceRoot": "/home/kuma/programes/element/element-call/.claude/worktrees/agent-ab37b080"
   },
   "scan": {
-    "completedAt": "2026-01-21T02:48:54+0800",
-    "estimatedTotalFiles": 350,
-    "scannedFiles": 180,
-    "coveragePercent": 51.4,
+    "strategy": "A全仓清点 + B模块优先扫描 + C按需补捞(局部)",
+    "completedAt": "2026-04-21T02:21:23+08:00",
+    "estimatedTotalFiles": 527,
+    "scannedFiles": 172,
+    "coveragePercent": 32.64,
     "truncated": false,
-    "strategy": "module-priority"
+    "notes": "以高信号文件优先扫描（入口/接口/配置/测试），未逐文件全文读取。"
+  },
+  "ignore": {
+    "sources": {
+      "gitignore": true,
+      "defaultRulesMerged": true
+    },
+    "patterns": [
+      "node_modules/**",
+      ".git/**",
+      ".github/**",
+      "dist/**",
+      "build/**",
+      ".next/**",
+      "__pycache__/**",
+      "*.lock",
+      "*.log",
+      "*.bin",
+      "*.pdf",
+      "*.png",
+      "*.jpg",
+      "*.jpeg",
+      "*.gif",
+      "*.mp4",
+      "*.zip",
+      "*.tar",
+      "*.gz",
+      ".DS_Store",
+      ".env",
+      "dist-ssr",
+      "*.local",
+      "*.bkp",
+      ".idea/",
+      "public/config.json",
+      "backend/synapse_tmp/*",
+      "backend/synapse_tmp_othersite/*",
+      "/coverage",
+      "config.json",
+      "yarn-error.log",
+      "/.pnp.*",
+      "/.yarn/*",
+      "!/.yarn/patches",
+      "!/.yarn/plugins",
+      "!/.yarn/releases",
+      "!/.yarn/sdks",
+      "!/.yarn/versions",
+      "/test-results/",
+      "/playwright-report/",
+      "/blob-report/",
+      "/playwright/.cache/",
+      "/AGENTS.md",
+      "/.serena/*",
+      "CLAUDE.md",
+      "all-close-plan.md",
+      "*storybook.log",
+      "storybook-static",
+      ".omx/"
+    ],
+    "topSkipped": [
+      {
+        "path": ".git/",
+        "reason": "版本控制目录，按忽略规则跳过"
+      },
+      {
+        "path": ".github/",
+        "reason": "CI/模板目录，非运行时核心"
+      },
+      {
+        "path": "node_modules/",
+        "reason": "依赖产物，按规则跳过"
+      },
+      {
+        "path": "dist/",
+        "reason": "构建产物目录"
+      },
+      {
+        "path": ".yarn/cache",
+        "reason": "依赖缓存"
+      }
+    ]
   },
   "modules": [
     {
       "path": "src/",
-      "name": "主应用源代码",
+      "name": "主应用",
       "claudeMd": "src/CLAUDE.md",
-      "entry": ["src/main.tsx", "src/App.tsx"],
-      "hasTests": true,
+      "entry": [
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/initializer.tsx"
+      ],
+      "interfaces": [
+        "src/widget.ts",
+        "src/UrlParams.ts"
+      ],
+      "tests": [
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx"
+      ],
+      "importantPaths": [
+        "src/state/CallViewModel/CallViewModel.ts",
+        "src/room/RoomPage.tsx"
+      ],
       "coverage": {
+        "entry": true,
         "interface": true,
         "tests": true,
         "dataModel": true
-      }
+      },
+      "gaps": []
     },
     {
       "path": "src/state/",
-      "name": "状态管理模块",
+      "name": "状态管理",
       "claudeMd": "src/state/CLAUDE.md",
-      "entry": ["src/state/CallViewModel/CallViewModel.ts", "src/state/MediaViewModel.ts"],
-      "hasTests": true,
-      "testFiles": [
+      "entry": [
+        "src/state/CallViewModel/CallViewModel.ts",
+        "src/state/AppViewModel.ts"
+      ],
+      "interfaces": [
+        "createCallViewModel$",
+        "Behavior/Observable 输出"
+      ],
+      "tests": [
         "src/state/CallViewModel/CallViewModel.test.ts",
-        "src/state/MediaViewModel.test.ts",
-        "src/state/MuteStates.test.ts",
+        "src/state/media/MediaViewModel.test.ts",
         "src/state/ObservableScope.test.ts"
       ],
-      "coverage": {
-        "interface": true,
-        "tests": true,
-        "dataModel": true
-      }
-    },
-    {
-      "path": "src/livekit/",
-      "name": "LiveKit 集成模块",
-      "claudeMd": "src/livekit/CLAUDE.md",
-      "entry": ["src/livekit/openIDSFU.ts"],
-      "hasTests": true,
-      "testFiles": [
-        "src/livekit/openIDSFU.test.ts",
-        "src/livekit/MatrixAudioRenderer.test.tsx"
+      "importantPaths": [
+        "src/state/CallViewModel/localMember/",
+        "src/state/CallViewModel/remoteMembers/"
       ],
       "coverage": {
-        "interface": true,
-        "tests": true,
-        "dataModel": false
-      }
-    },
-    {
-      "path": "src/e2ee/",
-      "name": "端到端加密模块",
-      "claudeMd": "src/e2ee/CLAUDE.md",
-      "entry": ["src/e2ee/matrixKeyProvider.ts", "src/e2ee/e2eeType.ts"],
-      "hasTests": true,
-      "testFiles": ["src/e2ee/matrixKeyProvider.test.ts"],
-      "coverage": {
+        "entry": true,
         "interface": true,
         "tests": true,
         "dataModel": true
-      }
-    },
-    {
-      "path": "src/analytics/",
-      "name": "数据分析模块",
-      "claudeMd": null,
-      "entry": ["src/analytics/PosthogAnalytics.ts"],
-      "hasTests": true,
-      "testFiles": ["src/analytics/PosthogAnalytics.test.ts"],
-      "coverage": {
-        "interface": false,
-        "tests": true,
-        "dataModel": false
-      }
-    },
-    {
-      "path": "src/otel/",
-      "name": "OpenTelemetry 追踪模块",
-      "claudeMd": null,
-      "entry": ["src/otel/otel.ts"],
-      "hasTests": true,
-      "testFiles": ["src/otel/otel.test.ts", "src/otel/ObjectFlattener.test.ts"],
-      "coverage": {
-        "interface": false,
-        "tests": true,
-        "dataModel": false
-      }
+      },
+      "gaps": []
     },
     {
       "path": "src/room/",
-      "name": "房间视图模块",
-      "claudeMd": null,
-      "entry": ["src/room/RoomPage.tsx", "src/room/GroupCallView.tsx"],
-      "hasTests": true,
-      "testFiles": [
+      "name": "房间流程",
+      "claudeMd": "src/room/CLAUDE.md",
+      "entry": [
+        "src/room/RoomPage.tsx",
+        "src/room/GroupCallView.tsx"
+      ],
+      "interfaces": [
+        "RoomPage",
+        "GroupCallView"
+      ],
+      "tests": [
         "src/room/GroupCallView.test.tsx",
         "src/room/InCallView.test.tsx",
         "src/room/InviteModal.test.tsx"
       ],
-      "coverage": {
-        "interface": false,
-        "tests": true,
-        "dataModel": false
-      }
-    },
-    {
-      "path": "src/settings/",
-      "name": "设置模块",
-      "claudeMd": null,
-      "entry": ["src/settings/SettingsModal.tsx"],
-      "hasTests": true,
-      "testFiles": [
-        "src/settings/DeveloperSettingsTab.test.tsx",
-        "src/settings/submit-rageshake.test.ts"
+      "importantPaths": [
+        "src/room/useLoadGroupCall.ts",
+        "src/room/GroupCallErrorBoundary.tsx"
       ],
       "coverage": {
-        "interface": false,
-        "tests": true,
-        "dataModel": false
-      }
-    },
-    {
-      "path": "src/reactions/",
-      "name": "表情反应模块",
-      "claudeMd": null,
-      "entry": ["src/reactions/ReactionIndicator.tsx"],
-      "hasTests": true,
-      "testFiles": [
-        "src/reactions/RaisedHandIndicator.test.tsx",
-        "src/reactions/ReactionsReader.test.tsx"
-      ],
-      "coverage": {
-        "interface": false,
-        "tests": true,
-        "dataModel": false
-      }
-    },
-    {
-      "path": "src/tile/",
-      "name": "视频瓦片模块",
-      "claudeMd": null,
-      "entry": ["src/tile/GridTile.tsx", "src/tile/SpotlightTile.tsx"],
-      "hasTests": true,
-      "testFiles": ["src/tile/GridTile.test.tsx"],
-      "coverage": {
-        "interface": false,
-        "tests": true,
-        "dataModel": false
-      }
-    },
-    {
-      "path": "playwright/",
-      "name": "E2E 测试套件",
-      "claudeMd": "playwright/CLAUDE.md",
-      "entry": ["playwright/*.spec.ts"],
-      "hasTests": true,
-      "coverage": {
+        "entry": true,
         "interface": true,
         "tests": true,
         "dataModel": false
-      }
+      },
+      "gaps": [
+        "缺少独立数据模型层（以组合状态为主）"
+      ]
+    },
+    {
+      "path": "src/livekit/",
+      "name": "LiveKit 集成",
+      "claudeMd": "src/livekit/CLAUDE.md",
+      "entry": [
+        "src/livekit/openIDSFU.ts"
+      ],
+      "interfaces": [
+        "getSFUConfigWithOpenID",
+        "LivekitRoomAudioRenderer"
+      ],
+      "tests": [
+        "src/livekit/openIDSFU.test.ts",
+        "src/livekit/MatrixAudioRenderer.test.tsx"
+      ],
+      "importantPaths": [
+        "src/livekit/TrackProcessorContext.tsx"
+      ],
+      "coverage": {
+        "entry": true,
+        "interface": true,
+        "tests": true,
+        "dataModel": true
+      },
+      "gaps": []
+    },
+    {
+      "path": "src/e2ee/",
+      "name": "端到端加密",
+      "claudeMd": "src/e2ee/CLAUDE.md",
+      "entry": [
+        "src/e2ee/matrixKeyProvider.ts"
+      ],
+      "interfaces": [
+        "MatrixKeyProvider",
+        "E2eeType"
+      ],
+      "tests": [
+        "src/e2ee/matrixKeyProvider.test.ts"
+      ],
+      "importantPaths": [
+        "src/e2ee/sharedKeyManagement.ts"
+      ],
+      "coverage": {
+        "entry": true,
+        "interface": true,
+        "tests": true,
+        "dataModel": true
+      },
+      "gaps": []
+    },
+    {
+      "path": "src/analytics/",
+      "name": "分析埋点",
+      "claudeMd": "src/analytics/CLAUDE.md",
+      "entry": [
+        "src/analytics/PosthogAnalytics.ts"
+      ],
+      "interfaces": [
+        "PosthogAnalytics",
+        "PosthogEvents trackers"
+      ],
+      "tests": [
+        "src/analytics/PosthogAnalytics.test.ts"
+      ],
+      "importantPaths": [
+        "src/analytics/PosthogEvents.ts"
+      ],
+      "coverage": {
+        "entry": true,
+        "interface": true,
+        "tests": true,
+        "dataModel": true
+      },
+      "gaps": []
+    },
+    {
+      "path": "src/settings/",
+      "name": "设置",
+      "claudeMd": "src/settings/CLAUDE.md",
+      "entry": [
+        "src/settings/SettingsModal.tsx",
+        "src/settings/settings.ts"
+      ],
+      "interfaces": [
+        "Setting<T>",
+        "useSetting"
+      ],
+      "tests": [
+        "src/settings/DeveloperSettingsTab.test.tsx",
+        "src/settings/submit-rageshake.test.ts"
+      ],
+      "importantPaths": [
+        "src/settings/rageshake.ts"
+      ],
+      "coverage": {
+        "entry": true,
+        "interface": true,
+        "tests": true,
+        "dataModel": true
+      },
+      "gaps": []
+    },
+    {
+      "path": "src/auth/",
+      "name": "认证",
+      "claudeMd": "src/auth/CLAUDE.md",
+      "entry": [
+        "src/auth/LoginPage.tsx",
+        "src/auth/RegisterPage.tsx"
+      ],
+      "interfaces": [
+        "useInteractiveLogin",
+        "useInteractiveRegistration"
+      ],
+      "tests": [
+        "playwright/access.spec.ts"
+      ],
+      "importantPaths": [
+        "src/auth/useRegisterPasswordlessUser.ts"
+      ],
+      "coverage": {
+        "entry": true,
+        "interface": true,
+        "tests": false,
+        "dataModel": false
+      },
+      "gaps": [
+        "目录内缺少直接单元测试",
+        "缺少独立领域模型文档"
+      ]
+    },
+    {
+      "path": "src/home/",
+      "name": "首页",
+      "claudeMd": "src/home/CLAUDE.md",
+      "entry": [
+        "src/home/HomePage.tsx"
+      ],
+      "interfaces": [
+        "HomePage"
+      ],
+      "tests": [
+        "src/home/CallList.test.tsx"
+      ],
+      "importantPaths": [
+        "src/home/RegisteredView.tsx",
+        "src/home/UnauthenticatedView.tsx"
+      ],
+      "coverage": {
+        "entry": true,
+        "interface": true,
+        "tests": true,
+        "dataModel": false
+      },
+      "gaps": [
+        "无独立数据模型层"
+      ]
+    },
+    {
+      "path": "src/grid/",
+      "name": "布局网格",
+      "claudeMd": "src/grid/CLAUDE.md",
+      "entry": [
+        "src/grid/Grid.tsx"
+      ],
+      "interfaces": [
+        "Grid",
+        "useUpdateLayout",
+        "useVisibleTiles"
+      ],
+      "tests": [],
+      "importantPaths": [
+        "src/grid/GridLayout.tsx",
+        "src/grid/SpotlightExpandedLayout.tsx"
+      ],
+      "coverage": {
+        "entry": true,
+        "interface": true,
+        "tests": false,
+        "dataModel": true
+      },
+      "gaps": [
+        "缺少目录内直接测试"
+      ]
+    },
+    {
+      "path": "src/tile/",
+      "name": "媒体瓦片",
+      "claudeMd": "src/tile/CLAUDE.md",
+      "entry": [
+        "src/tile/GridTile.tsx"
+      ],
+      "interfaces": [
+        "GridTile",
+        "SpotlightTile",
+        "MediaView"
+      ],
+      "tests": [
+        "src/tile/GridTile.test.tsx",
+        "src/tile/SpotlightTile.test.tsx"
+      ],
+      "importantPaths": [
+        "src/tile/TileAvatar.tsx"
+      ],
+      "coverage": {
+        "entry": true,
+        "interface": true,
+        "tests": true,
+        "dataModel": false
+      },
+      "gaps": [
+        "数据模型主要来自 state 层"
+      ]
+    },
+    {
+      "path": "src/reactions/",
+      "name": "反应",
+      "claudeMd": "src/reactions/CLAUDE.md",
+      "entry": [
+        "src/reactions/index.ts",
+        "src/reactions/ReactionIndicator.tsx"
+      ],
+      "interfaces": [
+        "ReactionSet",
+        "ElementCallReactionEventType"
+      ],
+      "tests": [
+        "src/reactions/RaisedHandIndicator.test.tsx",
+        "src/reactions/ReactionsReader.test.tsx"
+      ],
+      "importantPaths": [
+        "src/reactions/useReactionsSender.tsx"
+      ],
+      "coverage": {
+        "entry": true,
+        "interface": true,
+        "tests": true,
+        "dataModel": true
+      },
+      "gaps": []
+    },
+    {
+      "path": "playwright/",
+      "name": "E2E 测试",
+      "claudeMd": "playwright/CLAUDE.md",
+      "entry": [
+        "playwright.config.ts",
+        "playwright/*.spec.ts"
+      ],
+      "interfaces": [
+        "fixtures",
+        "SpaHelpers"
+      ],
+      "tests": [
+        "playwright/**/*.spec.ts",
+        "playwright/**/*.test.ts"
+      ],
+      "importantPaths": [
+        "playwright/widget/",
+        "playwright/mobile/"
+      ],
+      "coverage": {
+        "entry": true,
+        "interface": true,
+        "tests": true,
+        "dataModel": false
+      },
+      "gaps": [
+        "性能/稳定性基准未在模块文档中细化"
+      ]
     },
     {
       "path": "embedded/",
-      "name": "嵌入式打包",
-      "claudeMd": null,
-      "entry": null,
-      "hasTests": false,
-      "submodules": ["embedded/android/", "embedded/ios/", "embedded/web/"],
+      "name": "嵌入式分发",
+      "claudeMd": "embedded/CLAUDE.md",
+      "entry": [
+        "embedded/android/lib/build.gradle.kts",
+        "embedded/ios/Package.swift",
+        "embedded/web/package.json"
+      ],
+      "interfaces": [
+        "Android AAR 发布",
+        "iOS Swift Package",
+        "Web npm package"
+      ],
+      "tests": [],
+      "importantPaths": [
+        "embedded/android/",
+        "embedded/ios/",
+        "embedded/web/"
+      ],
       "coverage": {
-        "interface": false,
+        "entry": true,
+        "interface": true,
         "tests": false,
         "dataModel": false
-      }
+      },
+      "gaps": [
+        "缺少自动化测试信号",
+        "平台集成示例不足"
+      ]
+    },
+    {
+      "path": "sdk/",
+      "name": "实验性 SDK",
+      "claudeMd": "sdk/CLAUDE.md",
+      "entry": [
+        "sdk/main.ts"
+      ],
+      "interfaces": [
+        "createMatrixRTCSdk",
+        "MatrixRTCSdk"
+      ],
+      "tests": [],
+      "importantPaths": [
+        "sdk/helper.ts"
+      ],
+      "coverage": {
+        "entry": true,
+        "interface": true,
+        "tests": false,
+        "dataModel": true
+      },
+      "gaps": [
+        "缺少 sdk 目录直接测试",
+        "接口稳定性边界未固化"
+      ]
     },
     {
       "path": "locales/",
-      "name": "国际化翻译",
-      "claudeMd": null,
-      "entry": ["locales/en/app.json"],
-      "hasTests": false,
-      "languages": 25,
+      "name": "国际化资源",
+      "claudeMd": "locales/CLAUDE.md",
+      "entry": [
+        "locales/en/app.json"
+      ],
+      "interfaces": [
+        "i18next namespace app"
+      ],
+      "tests": [],
+      "importantPaths": [
+        "i18next-parser.config.ts"
+      ],
       "coverage": {
-        "interface": false,
+        "entry": true,
+        "interface": true,
         "tests": false,
         "dataModel": false
-      }
+      },
+      "gaps": [
+        "缺少翻译完整性自动报告文件"
+      ]
     }
   ],
-  "keyFiles": [
-    {
-      "path": "src/state/CallViewModel/CallViewModel.ts",
-      "description": "通话核心状态管理",
-      "importance": "critical"
-    },
-    {
-      "path": "src/state/MediaViewModel.ts",
-      "description": "媒体视图模型",
-      "importance": "critical"
-    },
-    {
-      "path": "src/livekit/openIDSFU.ts",
-      "description": "LiveKit 认证",
-      "importance": "high"
-    },
-    {
-      "path": "src/e2ee/matrixKeyProvider.ts",
-      "description": "E2EE 密钥管理",
-      "importance": "high"
-    },
-    {
-      "path": "src/main.tsx",
-      "description": "应用入口",
-      "importance": "high"
-    },
-    {
-      "path": "src/App.tsx",
-      "description": "根组件和路由",
-      "importance": "high"
-    },
-    {
-      "path": "src/room/RoomPage.tsx",
-      "description": "房间页面",
-      "importance": "medium"
-    },
-    {
-      "path": "src/widget.ts",
-      "description": "Widget API 集成",
-      "importance": "medium"
-    }
-  ],
-  "ignored": {
-    "directories": [
-      "node_modules",
-      ".git",
-      "dist",
-      ".yarn"
-    ],
-    "patterns": [
-      "*.lock",
-      "*.log",
-      "*.map"
-    ],
-    "reason": "依赖目录、构建产物和日志文件"
+  "coverageByModule": {
+    "src/": 0.9,
+    "src/state/": 1.0,
+    "src/room/": 0.85,
+    "src/livekit/": 1.0,
+    "src/e2ee/": 1.0,
+    "src/analytics/": 1.0,
+    "src/settings/": 1.0,
+    "src/auth/": 0.6,
+    "src/home/": 0.75,
+    "src/grid/": 0.7,
+    "src/tile/": 0.85,
+    "src/reactions/": 1.0,
+    "playwright/": 0.85,
+    "embedded/": 0.6,
+    "sdk/": 0.65,
+    "locales/": 0.55
   },
   "gaps": [
     {
-      "module": "src/analytics/",
-      "missing": ["claudeMd", "interface"]
-    },
-    {
-      "module": "src/otel/",
-      "missing": ["claudeMd", "interface"]
-    },
-    {
-      "module": "src/room/",
-      "missing": ["claudeMd", "interface"]
+      "module": "src/grid/",
+      "missing": [
+        "tests"
+      ]
     },
     {
       "module": "src/auth/",
-      "missing": ["claudeMd", "tests"]
-    },
-    {
-      "module": "src/home/",
-      "missing": ["claudeMd"]
-    },
-    {
-      "module": "src/grid/",
-      "missing": ["claudeMd", "tests"]
+      "missing": [
+        "direct-unit-tests",
+        "data-model-doc"
+      ]
     },
     {
       "module": "embedded/",
-      "missing": ["claudeMd", "tests", "interface"]
+      "missing": [
+        "tests",
+        "integration-examples"
+      ]
     },
     {
       "module": "sdk/",
-      "missing": ["claudeMd", "interface"]
+      "missing": [
+        "tests",
+        "api-stability-notes"
+      ]
+    },
+    {
+      "module": "locales/",
+      "missing": [
+        "i18n-quality-report"
+      ]
+    },
+    {
+      "module": "src/otel/",
+      "missing": [
+        "module-path-or-migration-note"
+      ],
+      "note": "历史索引存在 src/otel，但当前工作树未发现该目录。"
     }
   ],
   "nextSteps": [
-    "为 src/analytics/ 模块创建 CLAUDE.md 文档",
-    "为 src/otel/ 模块创建 CLAUDE.md 文档",
-    "为 src/room/ 模块创建 CLAUDE.md 文档",
-    "为 src/auth/ 模块添加测试覆盖",
-    "为 embedded/ 包创建详细文档",
-    "深入扫描 sdk/ 目录结构"
+    "优先补扫并补测: src/grid/（布局引擎用例）",
+    "补充 auth 单测: src/auth/useInteractiveLogin.ts, src/auth/useInteractiveRegistration.ts",
+    "深挖 sdk 兼容边界: sdk/main.ts 与 src/state/CallViewModel 依赖耦合点",
+    "补充 embedded 集成说明与自动验证脚本",
+    "核对历史 otel 模块是否迁移/删除，并更新根文档索引"
   ]
 }

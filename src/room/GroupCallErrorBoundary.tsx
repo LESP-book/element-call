@@ -14,6 +14,7 @@ import {
   type SVGAttributes,
   useCallback,
 } from "react";
+import { flushSync } from "react-dom";
 import { Trans, useTranslation } from "react-i18next";
 import {
   ErrorSolidIcon,
@@ -140,7 +141,7 @@ export const GroupCallErrorBoundary = ({
           resetError={resetError}
           recoveryActionHandler={async (action: CallErrorRecoveryAction) => {
             await recoveryActionHandler(action);
-            resetError();
+            flushSync(resetError);
           }}
         />
       );
