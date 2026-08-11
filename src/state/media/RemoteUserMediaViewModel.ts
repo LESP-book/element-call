@@ -61,13 +61,6 @@ export function createRemoteUserMedia(
         ),
       ),
     ),
-    activeVideoEnabled$: scope.behavior(
-      pretendToBeDisconnected$.pipe(
-        switchMap((disconnected) =>
-          disconnected ? of(false) : baseUserMedia.activeVideoEnabled$,
-        ),
-      ),
-    ),
     videoEnabled$: scope.behavior(
       pretendToBeDisconnected$.pipe(
         switchMap((disconnected) =>

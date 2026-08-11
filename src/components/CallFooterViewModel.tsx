@@ -33,14 +33,21 @@ function buildMuteBehaviors(
   muteStates: MuteStates,
 ): Pick<
   ViewModel<FooterSnapshot>,
-  "audioEnabled$" | "toggleAudio$" | "videoEnabled$" | "toggleVideo$"
+  | "audioEnabled$"
+  | "audioBusy$"
+  | "toggleAudio$"
+  | "videoEnabled$"
+  | "videoBusy$"
+  | "toggleVideo$"
 > {
   return {
     audioEnabled$: muteStates.audio.enabled$,
+    audioBusy$: muteStates.audio.syncing$,
     toggleAudio$: scope.behavior(
       muteStates.audio.toggle$.pipe(map((t) => t ?? undefined)),
     ),
     videoEnabled$: muteStates.video.enabled$,
+    videoBusy$: muteStates.video.syncing$,
     toggleVideo$: scope.behavior(
       muteStates.video.toggle$.pipe(map((t) => t ?? undefined)),
     ),
@@ -167,9 +174,7 @@ export function createCallFooterViewModel(
         callModel.setSettingsOpen$,
       ]).pipe(
         map(([isPip, showHeader, setSettingsOpen]) =>
-          !isPip &&
-          !(headerStyle === HeaderStyle.AppBar && showHeader) &&
-          showControls
+          !isPip && headerStyle !== HeaderStyle.AppBar && showControls
             ? (): void => setSettingsOpen(true)
             : undefined,
         ),
@@ -178,14 +183,7 @@ export function createCallFooterViewModel(
 
     showLogo$: scope.behavior(isPip$.pipe(map((isPip) => showLogo && !isPip))),
 
-    layoutMode$: callModel.gridMode$,
-    setLayoutMode$: scope.behavior(
-      isPip$.pipe(
-        map((isPip) =>
-          !isPip && showControls ? callModel.setGridMode : undefined,
-        ),
-      ),
-    ),
+    layoutSwitchVm$: callModel.layoutSwitchVm$,
 
     sharingScreen$: callModel.sharingScreen$,
     toggleScreenSharing$: constant(callModel.toggleScreenSharing ?? undefined),
@@ -249,7 +247,6 @@ export function createLobbyFooterViewModel(
       hideControls: false,
       asOverlay: false,
       buttonSize: "lg",
-      showLayoutSwitcher: false,
       openSettings,
       hangup,
       terminateCall: undefined,
@@ -258,11 +255,12 @@ export function createLobbyFooterViewModel(
       showFooter: true,
       toggleAudio: undefined,
       toggleVideo: undefined,
-      setLayoutMode: undefined,
       toggleScreenSharing: undefined,
       audioEnabled: undefined,
+      audioBusy: false,
       videoEnabled: undefined,
-      layoutMode: undefined,
+      videoBusy: false,
+      layoutSwitchVm: null,
       sharingScreen: false,
       audioOutputSwitcher: undefined,
       reactionIdentifier: undefined,

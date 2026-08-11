@@ -53,7 +53,8 @@ import { MuteStates } from "../src/state/MuteStates";
 import { MediaDevices } from "../src/state/MediaDevices";
 import { E2eeType } from "../src/e2ee/e2eeType";
 import { CallTerminationReader } from "../src/callTermination/CallTerminationReader";
-import { currentAndPrev, logger, TEXT_LK_TOPIC, tryMakeSticky } from "./helper";
+import { currentAndPrev, TEXT_LK_TOPIC, tryMakeSticky } from "./helper";
+import { logger as rootLogger } from "matrix-js-sdk/lib/logger";
 import {
   ElementWidgetActions,
   widget as _widget,
@@ -77,9 +78,9 @@ interface MatrixRTCSdk {
   stop: () => void;
   data$: Observable<{ rtcBackendIdentity: string; data: string }>;
   /**
-   * flattened list of members
+   * flattened list of remote members
    */
-  members$: Behavior<
+  remoteMembers$: Behavior<
     {
       connection: Connection | null;
       membership: CallMembership;
@@ -87,7 +88,7 @@ interface MatrixRTCSdk {
     }[]
   >;
   /**
-   * flattened local members
+   * flattened local member
    */
   localMember$: Behavior<{
     connection: Connection | null;
@@ -105,6 +106,7 @@ export async function createMatrixRTCSdk(
   id: string = "",
   sticky: boolean = false,
 ): Promise<MatrixRTCSdk> {
+  const logger = rootLogger.getChild("[MatrixRTCSdk]");
   const scope = new ObservableScope();
 
   // widget client
@@ -341,8 +343,8 @@ export async function createMatrixRTCSdk(
       ),
     ),
     connected$: callViewModel.connected$,
-    members$: scope.behavior(
-      callViewModel.matrixLivekitMembers$.pipe(
+    remoteMembers$: scope.behavior(
+      callViewModel.remoteMatrixLivekitMembers$.pipe(
         switchMap((members) => {
           const listOfMemberObservables = members.map((member) =>
             combineLatest([

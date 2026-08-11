@@ -38,7 +38,7 @@ import { type MediaDevices } from "../state/MediaDevices";
 import { aliceRtcMember, localRtcMember } from "./test-fixtures";
 import { type RaisedHandInfo, type ReactionInfo } from "../reactions";
 import { constant } from "../state/Behavior";
-import { MatrixRTCMode } from "../settings/settings";
+import { MatrixRTCMode } from "../config/ConfigOptions";
 import { createCallFooterViewModel } from "../components/CallFooterViewModel";
 import { type FooterSnapshot } from "../components/CallFooter";
 import { type ViewModel } from "../state/ViewModel";
@@ -128,8 +128,8 @@ export function getBasicRTCSession(
 
 /**
  * Construct a basic CallViewModel to test components that make use of it.
- * @param members
- * @param initialRtcMemberships
+ * @param members - Room members to include in the call.
+ * @param initialRtcMemberships - RTC memberships to start with.
  * @returns
  */
 export function getBasicCallViewModelEnvironment(

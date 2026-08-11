@@ -10,28 +10,28 @@ import { type ReactNode, useCallback, useMemo } from "react";
 import { useObservableEagerState } from "observable-hooks";
 import classNames from "classnames";
 
-import { type OneOnOneLandscapeLayout as OneOnOneLandscapeLayoutModel } from "../state/layout-types.ts";
+import { type OneOnOneDesktopLayout as OneOnOneDesktopLayoutModel } from "../state/layout-types.ts";
 import { type CallLayout, arrangeTiles } from "./CallLayout";
-import styles from "./OneOnOneLandscapeLayout.module.css";
+import styles from "./OneOnOneDesktopLayout.module.css";
 import { type DragCallback, useUpdateLayout } from "./Grid";
 import { useBehavior } from "../useBehavior";
 
 /**
- * An implementation of the "one-on-one" layout for landscape screens, in which
+ * An implementation of the "one-on-one" layout for desktop platforms, in which
  * the remote participant is shown at maximum size, overlaid by a small view of
  * the local participant.
  */
-export const makeOneOnOneLandscapeLayout: CallLayout<
-  OneOnOneLandscapeLayoutModel
+export const makeOneOnOneDesktopLayout: CallLayout<
+  OneOnOneDesktopLayoutModel
 > = ({ minBounds$ }) => ({
   foreground: "fixed",
 
-  fixed: function OneOnOneLandscapeLayoutFixed({ ref }): ReactNode {
+  fixed: function OneOnOneDesktopLayoutFixed({ ref }): ReactNode {
     useUpdateLayout();
     return <div ref={ref} />;
   },
 
-  scrolling: function OneOnOneLandscapeLayoutScrolling({
+  scrolling: function OneOnOneDesktopLayoutScrolling({
     ref,
     model,
     Slot,

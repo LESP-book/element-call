@@ -27,18 +27,15 @@ import {
   VolumeOffIcon,
   VisibilityOnIcon,
   UserProfileIcon,
-  SwitchCameraSolidIcon,
-  ShareScreenIcon,
   VolumeOffSolidIcon,
-  VideoCallSolidIcon,
-  VoiceCallSolidIcon,
-  EndCallIcon,
+  SwitchCameraSolidIcon,
 } from "@vector-im/compound-design-tokens/assets/web/icons";
 import {
   ContextMenu,
   MenuItem,
   ToggleMenuItem,
   Menu,
+  Text,
 } from "@vector-im/compound-web";
 import { useObservableEagerState } from "observable-hooks";
 
@@ -54,6 +51,7 @@ import { type LocalUserMediaViewModel } from "../state/media/LocalUserMediaViewM
 import { type RemoteUserMediaViewModel } from "../state/media/RemoteUserMediaViewModel";
 import { type UserMediaViewModel } from "../state/media/UserMediaViewModel";
 import { type RingingMediaViewModel } from "../state/media/RingingMediaViewModel";
+import { RingingStatus } from "./RingingStatus";
 
 interface TileProps {
   ref?: Ref<HTMLDivElement>;
@@ -69,17 +67,15 @@ interface TileProps {
 
 interface RingingMediaTileProps extends TileProps {
   vm: RingingMediaViewModel;
+  showStatus: boolean;
 }
 
 const RingingMediaTile: FC<RingingMediaTileProps> = ({
   vm,
+  showStatus,
   className,
   ...props
 }) => {
-  const { t } = useTranslation();
-  const pickupState = useBehavior(vm.pickupState$);
-  const videoEnabled = useBehavior(vm.videoEnabled$);
-
   return (
     <MediaView
       className={classNames(className, styles.tile)}
@@ -87,14 +83,14 @@ const RingingMediaTile: FC<RingingMediaTileProps> = ({
       userId={vm.userId}
       unencryptedWarning={false}
       status={
-        pickupState === "ringing"
-          ? {
-              text: t("video_tile.calling"),
-              Icon: videoEnabled ? VideoCallSolidIcon : VoiceCallSolidIcon,
-            }
-          : { text: t("video_tile.call_ended"), Icon: EndCallIcon }
+        showStatus && (
+          <Text as="span" size="sm" weight="medium">
+            <RingingStatus vm={vm} />
+          </Text>
+        )
       }
-      videoEnabled={videoEnabled}
+      avatarStyle="translucent"
+      videoEnabled={false}
       videoFit="cover"
       mirror={false}
       {...props}
@@ -134,10 +130,7 @@ const UserMediaTile: FC<UserMediaTileProps> = ({
 }) => {
   const { toggleRaisedHand } = useReactionsSender();
   const { t } = useTranslation();
-  // Use activeVideo$ for display, which switches between camera and screen share
-  const video = useBehavior(vm.activeVideo$);
-  const hasScreenShare = useBehavior(vm.hasScreenShare$);
-  const displaySource = useBehavior(vm.displaySource$);
+  const video = useBehavior(vm.video$);
   const unencryptedWarning = useBehavior(vm.unencryptedWarning$);
   const audioStreamStats = useObservableEagerState<
     RTCInboundRtpStreamStats | RTCOutboundRtpStreamStats | undefined
@@ -146,8 +139,7 @@ const UserMediaTile: FC<UserMediaTileProps> = ({
     RTCInboundRtpStreamStats | RTCOutboundRtpStreamStats | undefined
   >(vm.videoStreamStats$);
   const audioEnabled = useBehavior(vm.audioEnabled$);
-  // Use activeVideoEnabled$ which respects the current display source
-  const videoEnabled = useBehavior(vm.activeVideoEnabled$);
+  const videoEnabled = useBehavior(vm.videoEnabled$);
   const speaking = useBehavior(vm.speaking$);
   const videoFit = useBehavior(vm.videoFit$);
 
@@ -174,30 +166,13 @@ const UserMediaTile: FC<UserMediaTileProps> = ({
       : t("microphone_off");
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const onSelectDisplaySource = useCallback(
-    (e: Event) => {
-      e.preventDefault();
-      vm.toggleDisplaySource();
-    },
-    [vm],
-  );
   const menu = (
     <>
       {menuStart}
-      {hasScreenShare && (
-        <ToggleMenuItem
-          Icon={
-            displaySource === "screen" ? VideoCallSolidIcon : ShareScreenIcon
-          }
-          label={
-            displaySource === "screen"
-              ? t("video_tile.switch_to_camera")
-              : t("video_tile.switch_to_screen")
-          }
-          checked={displaySource === "screen"}
-          onSelect={onSelectDisplaySource}
-        />
-      )}
+      {/*
+       No additional menu item (used to be the manual fit to frame.
+       Placeholder for future menu items that should be placed here.
+       */}
       {menuEnd}
     </>
   );
@@ -207,8 +182,6 @@ const UserMediaTile: FC<UserMediaTileProps> = ({
     : undefined;
 
   const showSpeaking = showSpeakingIndicators && speaking;
-  const effectiveVideoFit =
-    displaySource === "screen" ? "contain" : videoFit;
 
   const tile = (
     <MediaView
@@ -217,11 +190,10 @@ const UserMediaTile: FC<UserMediaTileProps> = ({
       userId={vm.userId}
       unencryptedWarning={unencryptedWarning}
       videoEnabled={videoEnabled}
-      videoFit={effectiveVideoFit}
+      videoFit={videoFit}
       className={classNames(className, styles.tile, {
         [styles.speaking]: showSpeaking,
         [styles.handRaised]: !showSpeaking && handRaised,
-        [styles.screenShare]: displaySource === "screen",
       })}
       nameTagLeadingIcon={
         <AudioIcon
@@ -425,6 +397,8 @@ interface GridTileProps {
   style?: ComponentProps<typeof animated.div>["style"];
   showSpeakingIndicators: boolean;
   showNameTags: boolean;
+  showRingingStatus: boolean;
+  showOutline: boolean;
   focusable: boolean;
 }
 
@@ -432,7 +406,10 @@ export const GridTile: FC<GridTileProps> = ({
   ref: theirRef,
   vm,
   showSpeakingIndicators,
+  showRingingStatus,
+  showOutline,
   onOpenProfile,
+  className,
   ...props
 }) => {
   const ourRef = useRef<HTMLDivElement | null>(null);
@@ -448,6 +425,8 @@ export const GridTile: FC<GridTileProps> = ({
         vm={media}
         displayName={displayName}
         mxcAvatarUrl={mxcAvatarUrl}
+        showStatus={showRingingStatus}
+        className={classNames(className, { [styles.outline]: showOutline })}
         {...props}
       />
     );
@@ -460,6 +439,7 @@ export const GridTile: FC<GridTileProps> = ({
         onOpenProfile={onOpenProfile}
         displayName={displayName}
         mxcAvatarUrl={mxcAvatarUrl}
+        className={classNames(className, { [styles.outline]: showOutline })}
         {...props}
       />
     );
@@ -471,6 +451,7 @@ export const GridTile: FC<GridTileProps> = ({
         showSpeakingIndicators={showSpeakingIndicators}
         displayName={displayName}
         mxcAvatarUrl={mxcAvatarUrl}
+        className={classNames(className, { [styles.outline]: showOutline })}
         {...props}
       />
     );

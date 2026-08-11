@@ -100,7 +100,7 @@ export const SettingsModal: FC<Props> = ({
 
   const devices = useMediaDevices();
   useEffect(() => {
-    if (open) devices.requestDeviceNames();
+    if (open) devices.requestDeviceNames(); // No-op after the first call
   }, [open, devices]);
 
   const [soundVolume, setSoundVolume] = useSetting(soundEffectVolumeSetting);
@@ -152,7 +152,13 @@ export const SettingsModal: FC<Props> = ({
           />
 
           <div className={styles.volumeSlider}>
-            <label>{t("settings.audio_tab.effect_volume_label")}</label>
+            <label>
+              {t("settings.audio_tab.effect_volume_label")}
+              {": "}
+              <span className={styles.settingValue}>
+                {Math.round(soundVolumeRaw * 100)}%
+              </span>
+            </label>
             <p>{t("settings.audio_tab.effect_volume_description")}</p>
             <Slider
               label={t("video_tile.volume")}

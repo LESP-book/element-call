@@ -115,30 +115,33 @@ For more details on the packages, see the
 For operating and deploying Element Call on your own server, refer to the
 [**Self-Hosting Guide**](./docs/self_hosting.md).
 
-## 🧭 MatrixRTC Backend Discovery and Selection
+## MatrixRTC Transports
 
-For proper Element Call operation each site deployment needs a MatrixRTC backend
-setup as outlined in the [Self-Hosting Guide](./docs/self_hosting.md). A typical
-federated site deployment for three different sites A, B and C is depicted below.
+For proper operation of Element Call, each deployment needs to set up a
+MatrixRTC transport in the form of a LiveKit server as outlined in the
+[Self-Hosting Guide](./docs/self_hosting.md). A typical federated site
+deployment for three different sites A, B and C is depicted below.
 
 <p align="center">
   <img src="./docs/Federated_Setup.drawio.png" alt="Element Call federated setup">
 </p>
 
-### Backend Discovery
+### Transport Discovery
 
-The MatrixRTC backend (according to
-[MSC4143](https://github.com/matrix-org/matrix-spec-proposals/pull/4143)) is
-announced by the Matrix site's `.well-known/matrix/client` file and discovered
-via the `org.matrix.msc4143.rtc_foci` key, e.g.:
+Element Call discovers the available MatrixRTC transports (as defined by
+[MSC4519](https://github.com/matrix-org/matrix-spec-proposals/pull/4519)) by
+hitting the `GET /_matrix/client/unstable/org.matrix.msc4143/rtc/transports`
+endpoint of the Client-Server API. An example response:
 
 ```json
-"org.matrix.msc4143.rtc_foci": [
+{
+  "rtc_transports": [
     {
-        "type": "livekit",
-        "livekit_service_url": "https://matrix-rtc.example.com/livekit/jwt"
-    },
-]
+      "type": "livekit",
+      "livekit_service_url": "https://matrix-rtc.example.com/livekit/jwt"
+    }
+  ]
+}
 ```
 
 where the format for MatrixRTC using LiveKit backend is defined in
@@ -149,7 +152,7 @@ via `livekit_service_url`.
 
 ### Backend Selection
 
-- Each call participant proposes their discovered MatrixRTC backend from
+- Each call participant proposes their discovered MatrixRTC transport from
   `org.matrix.msc4143.rtc_foci` in their `org.matrix.msc3401.call.member` state event.
 - For the **LiveKit** MatrixRTC backend
   ([MSC4195](https://github.com/hughns/matrix-spec-proposals/blob/hughns/matrixrtc-livekit/proposals/4195-matrixrtc-livekit.md)),
@@ -212,7 +215,7 @@ See also:
 
 ### Backend
 
-A docker compose file `dev-backend-docker-compose.yml` is provided to start the
+A docker compose file `docker-compose-dev.yml` is provided to start the
 whole stack of components which is required for a local development environment
 including federation:
 
@@ -239,18 +242,25 @@ the backend components:
 ```sh
 pnpm backend
 # or for podman-compose:
-# podman-compose -f dev-backend-docker-compose.yml up
+# podman-compose -f docker-compose-dev.yml up
 ```
 
 > [!NOTE]
 > To ensure your local development frontend functions properly, you’ll need to
-> add certificate exceptions in your browser for `https://localhost:3000`,
-> `https://matrix-rtc.m.localhost/livekit/jwt/healthz` and
-> `https://synapse.m.localhost/.well-known/matrix/client`. This can be either
-> done by adding the minimum localhost CA
+> add certificate exceptions in your browser for `https://localhost:3000` and
+> `https://matrix-rtc.m.localhost/livekit/jwt/healthz`. This can be done either
+> by adding the minimum localhost CA
 > ([./backend/dev_tls_local-ca.crt](./backend/dev_tls_local-ca.crt)) to your web
 > browser's trusted certificates or by simply copying and pasting each URL into
 > your browser’s address bar and follow the prompts to add the exception.
+
+### Updating snapshots
+
+To update snapshots used in tests, use Vitest's `-u` flag, e.g.:
+
+```sh
+pnpm test DeveloperSettingsTab -u
+```
 
 ### Playwright tests
 
@@ -350,6 +360,16 @@ To add a new translation key you can do these steps:
 Usage and other technical details about the project can be found here:
 
 [**Docs**](./docs/README.md)
+
+## GitHub Labels
+
+GitHub labels in this repository are maintained in the [`labels.yml`](.github/labels.yml) file and
+automatically synced to GitHub using the [`sync-labels` workflow](.github/workflows/sync-labels.yml).
+We do this so that we can reuse the labels between repositories.
+
+> [!WARNING]
+> Do not manually edit labels in the GitHub UI. Any manual changes will be overridden by the
+> workflow on its next invocation.
 
 ## 📝 Copyright & License
 

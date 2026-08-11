@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 Please see LICENSE in the repository root for full details.
 */
 
-import { type ComponentType, useState, type FC } from "react";
+import { type ComponentType, useState, type FC, useEffect } from "react";
 import {
   Button,
   Menu,
@@ -26,6 +26,7 @@ import { useTranslation } from "react-i18next";
 import styles from "./MediaMuteAndSwitchButton.module.css";
 import { MicButton, VideoButton } from "../button";
 import { type DeviceLabel } from "../state/MediaDevices";
+import { useMediaDevices } from "../MediaDevicesContext";
 
 export interface MenuOptions {
   label: DeviceLabel;
@@ -39,6 +40,8 @@ export interface MediaMuteAndSwitchButtonProps {
   enabled?: boolean;
   /** Callback if the mute button is clicked */
   onMuteClick?: () => void;
+  /** True while mute/unmute operation is syncing. */
+  busy?: boolean;
   iconsAndLabels: "video" | "audio";
   /** The options available for the media device selector modal */
   options?: MenuOptions[];
@@ -58,6 +61,7 @@ const BLUR_ID = "blur";
 export const MediaMuteAndSwitchButton: FC<MediaMuteAndSwitchButtonProps> = ({
   title,
   enabled,
+  busy,
   onMuteClick,
   iconsAndLabels,
   options,
@@ -68,7 +72,14 @@ export const MediaMuteAndSwitchButton: FC<MediaMuteAndSwitchButtonProps> = ({
 }) => {
   const [plannedSelection, setPlannedSelection] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const isBusy = busy ?? false;
   const { t } = useTranslation();
+  const devices = useMediaDevices();
+
+  useEffect(() => {
+    if (menuOpen) devices.requestDeviceNames(); // No-op after the first call
+  }, [menuOpen, devices]);
+
   let button;
   let toggles: { label: string; enabled: boolean; id: string }[] = [];
   switch (iconsAndLabels) {
@@ -76,12 +87,13 @@ export const MediaMuteAndSwitchButton: FC<MediaMuteAndSwitchButtonProps> = ({
       button = (
         <VideoButton
           enabled={enabled ?? false}
+          busy={isBusy}
           onClick={(e) => {
             onMuteClick?.();
             e.preventDefault();
             e.stopPropagation();
           }}
-          disabled={onMuteClick === undefined}
+          disabled={isBusy || onMuteClick === undefined}
           data-testid="incall_videomute"
         />
       );
@@ -99,12 +111,13 @@ export const MediaMuteAndSwitchButton: FC<MediaMuteAndSwitchButtonProps> = ({
       button = (
         <MicButton
           enabled={enabled ?? false}
+          busy={isBusy}
           onClick={(e) => {
             onMuteClick?.();
             e.preventDefault();
             e.stopPropagation();
           }}
-          disabled={onMuteClick === undefined}
+          disabled={isBusy || onMuteClick === undefined}
           data-testid="incall_mute"
         />
       );
@@ -119,15 +132,16 @@ export const MediaMuteAndSwitchButton: FC<MediaMuteAndSwitchButtonProps> = ({
       IconOptions = VideoCallIcon;
       optionsButtonLabel = t("settings.devices.camera");
       numberedLabel = (n): string =>
-        t("settings.devices.microphone_numbered", { n });
+        t("settings.devices.camera_numbered", { n });
       break;
     case "audio":
       IconOptions = MicOnIcon;
       optionsButtonLabel = t("settings.devices.microphone");
       numberedLabel = (n): string =>
-        t("settings.devices.camera_numbered", { n });
+        t("settings.devices.microphone_numbered", { n });
       break;
   }
+
   return (
     <div
       className={classNames({
@@ -177,6 +191,7 @@ export const MediaMuteAndSwitchButton: FC<MediaMuteAndSwitchButtonProps> = ({
                     width={24}
                     height={24}
                     className={styles.itemIcon}
+                    aria-hidden
                   />
                 )
               }
@@ -187,10 +202,23 @@ export const MediaMuteAndSwitchButton: FC<MediaMuteAndSwitchButtonProps> = ({
                 onSelect?.(id);
               }}
               key={id}
+              role="menuitemradio"
+              aria-checked={selectedOption === id}
             >
-              {selectedOption === id && <CheckIcon width={24} height={24} />}
+              {selectedOption === id && (
+                <CheckIcon
+                  width={24}
+                  height={24}
+                  aria-hidden // A label would be redundant to aria-checked above
+                />
+              )}
               {selectedOption !== id && plannedSelection === id && (
-                <SpinnerIcon width={24} height={24} className={styles.rotate} />
+                <SpinnerIcon
+                  width={24}
+                  height={24}
+                  className={styles.rotate}
+                  aria-label={t("settings.devices.activating")}
+                />
               )}
             </MenuItem>
           );
