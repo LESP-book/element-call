@@ -19,7 +19,13 @@ import {
   Subject,
   switchMap,
 } from "rxjs";
-import { SyncState } from "matrix-js-sdk";
+import {
+  type IRoomTimelineData,
+  MatrixEvent,
+  MatrixEventEvent,
+  RoomEvent as MatrixRoomEvent,
+  SyncState,
+} from "matrix-js-sdk";
 import {
   ConnectionState,
   type LocalTrackPublication,
@@ -44,6 +50,7 @@ import {
   mockRtcMembership,
   testScope,
   exampleTransport,
+  MockRTCSession,
 } from "../../utils/test.ts";
 import { E2eeType } from "../../e2ee/e2eeType.ts";
 import {
@@ -61,6 +68,7 @@ import {
   localRtcMemberDevice2,
 } from "../../utils/test-fixtures.ts";
 import { MediaDevices } from "../MediaDevices.ts";
+import { type ObservableScope } from "../ObservableScope.ts";
 import { getValue } from "../../utils/observable.ts";
 import { type Behavior, constant } from "../Behavior.ts";
 import {
@@ -69,7 +77,10 @@ import {
 } from "./CallViewModelTestUtils.ts";
 import { MatrixRTCMode } from "../../config/ConfigOptions.ts";
 import { initializeWidget } from "../../widget.ts";
-import { type TerminationEvent } from "../../callTermination";
+import {
+  ElementCallTerminateEventType,
+  type TerminationEvent,
+} from "../../callTermination";
 
 initializeWidget();
 
@@ -1419,20 +1430,80 @@ describe.each(modes)("CallViewModel (%s mode)", (mode) => {
   test("termination events cause the call to leave", () => {
     const termination$ = new Subject<TerminationEvent>();
     const leaveReasons: string[] = [];
+    let scopeFromFactory: unknown;
+    let scopeFromContinuation: unknown;
+    const createTermination$ = vi.fn((scope: unknown) => {
+      scopeFromFactory = scope;
+      return termination$;
+    });
 
     withCallViewModel(
       {},
-      (vm) => {
+      (vm, _rtcSession, _subjects, _setSyncState, scope) => {
+        scopeFromContinuation = scope;
         vm.leave$.subscribe((reason) => leaveReasons.push(reason));
         termination$.next({
           terminatedBy: aliceUserId,
           timestamp: 12345,
         });
       },
-      { termination$ },
+      { createTermination$ },
+    );
+
+    expect(scopeFromFactory).toBe(scopeFromContinuation);
+    expect(createTermination$).toHaveBeenCalledOnce();
+    expect(leaveReasons).toStrictEqual(["terminated"]);
+  });
+
+  test("the default termination reader follows the call scope", () => {
+    const leaveReasons: string[] = [];
+    let scope: ObservableScope | undefined;
+    let rtcSession: MockRTCSession | undefined;
+
+    withCallViewModel(
+      {},
+      (vm, session, _subjects, _setSyncState, callScope) => {
+        rtcSession = session;
+        scope = callScope;
+        session.room.client.decryptEventIfNeeded = vi
+          .fn()
+          .mockResolvedValue(undefined);
+        vm.leave$.subscribe((reason) => leaveReasons.push(reason));
+
+        session.room.emit(
+          MatrixRoomEvent.Timeline,
+          new MatrixEvent({
+            room_id: session.room.roomId,
+            event_id: "$termination:example.org",
+            sender: aliceUserId,
+            type: ElementCallTerminateEventType,
+            content: {
+              terminated_by: aliceUserId,
+              timestamp: 12345,
+            },
+          }),
+          session.room,
+          undefined,
+          false,
+          {} as IRoomTimelineData,
+        );
+      },
     );
 
     expect(leaveReasons).toStrictEqual(["terminated"]);
+    const roomOff = vi.spyOn(rtcSession!.room, "off");
+    const clientOff = vi.spyOn(rtcSession!.room.client, "off");
+
+    scope!.end();
+
+    expect(roomOff).toHaveBeenCalledWith(
+      MatrixRoomEvent.Timeline,
+      expect.any(Function),
+    );
+    expect(clientOff).toHaveBeenCalledWith(
+      MatrixEventEvent.Decrypted,
+      expect.any(Function),
+    );
   });
 
   test("autoLeave$ emits only when autoLeaveWhenOthersLeft option is enabled", () => {

@@ -6,7 +6,7 @@ Please see LICENSE in the repository root for full details.
 */
 
 import { type CallMembership } from "matrix-js-sdk/lib/matrixrtc";
-import { BehaviorSubject, NEVER } from "rxjs";
+import { BehaviorSubject } from "rxjs";
 import { vitest } from "vitest";
 import { type RelationsContainer } from "matrix-js-sdk/lib/models/relations-container";
 import EventEmitter from "events";
@@ -175,7 +175,6 @@ export function getBasicCallViewModelEnvironment(
         }),
       connectionState$: constant(ConnectionState.Connected),
       matrixRTCMode$: constant(MatrixRTCMode.Compatibility),
-      termination$: NEVER,
       ...callViewModelOptions,
     },
     handRaisedSubject$,

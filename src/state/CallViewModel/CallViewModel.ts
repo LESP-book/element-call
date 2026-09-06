@@ -13,7 +13,10 @@ import {
   type Room as LivekitRoom,
   type RoomOptions,
 } from "livekit-client";
-import { type Room as MatrixRoom } from "matrix-js-sdk";
+import {
+  type MatrixClient,
+  type Room as MatrixRoom,
+} from "matrix-js-sdk";
 import {
   BehaviorSubject,
   catchError,
@@ -197,9 +200,22 @@ export interface CallViewModelOptions {
   matrixRTCMode$?: Behavior<MatrixRTCMode>;
   /** Optional behavior overriding for the screensharing, for testing */
   toggleScreensharing?: () => void;
-  /** Optional termination event stream, mainly for testing purposes. */
-  termination$?: Observable<TerminationEvent>;
+  /** Optional termination event factory, mainly for testing purposes. */
+  createTermination$?: CreateTermination$;
 }
+
+export type CreateTermination$ = (
+  scope: ObservableScope,
+  matrixRTCSession: MatrixRTCSession,
+  client: MatrixClient,
+) => Observable<TerminationEvent>;
+
+/** Create the Matrix termination event stream for a call's lifetime. */
+export const createTermination$: CreateTermination$ = (
+  scope,
+  matrixRTCSession,
+  client,
+) => new CallTerminationReader(scope, matrixRTCSession, client).termination$;
 
 // Do not play any sounds if the participant count has exceeded this
 // number.
@@ -461,9 +477,11 @@ export function createCallViewModel$(
   if (!(userId && deviceId))
     throw new UnknownCallError(new Error("userId and deviceId are required"));
 
-  const termination$ =
-    options.termination$ ??
-    new CallTerminationReader(scope, matrixRTCSession, client).termination$;
+  const termination$ = (options.createTermination$ ?? createTermination$)(
+    scope,
+    matrixRTCSession,
+    client,
+  );
 
   const livekitKeyProvider = getE2eeKeyProvider(
     options.encryptionSystem,
