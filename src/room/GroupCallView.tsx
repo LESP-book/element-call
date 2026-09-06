@@ -419,7 +419,11 @@ export const GroupCallView: FC<Props> = ({
           ),
         )
         .then(async () => {
+          // Keep recoverable call errors on the error page so the user can
+          // use its reconnect action. Other leave reasons return to the SPA
+          // home page when analytics is disabled.
           if (
+            reason !== "error" &&
             !isPasswordlessUser &&
             !confineToRoom &&
             !PosthogAnalytics.instance.isEnabled()

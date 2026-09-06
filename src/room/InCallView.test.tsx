@@ -235,10 +235,11 @@ describe("InCallView", () => {
 });
 
 describe("ActiveCall", () => {
-  it("creates the view models and renders the call", async () => {
+  it("creates the view models and renders the end-call menu", async () => {
+    const user = userEvent.setup();
     const mediaDevices = mockMediaDevices({});
     const { rtcSession, matrixRoom } = getBasicRTCSession([local, alice]);
-    const { findByTestId } = render(
+    const { findByRole } = render(
       <BrowserRouter>
         <MediaDevicesContext value={mediaDevices}>
           <ProcessorProvider>
@@ -260,7 +261,12 @@ describe("ActiveCall", () => {
         </MediaDevicesContext>
       </BrowserRouter>,
     );
-    // Rendering at all proves ActiveCall created all of its view models
-    expect(await findByTestId("incall_leave")).toBeVisible();
+
+    const endCallButton = await findByRole("button", { name: "End call" });
+    expect(endCallButton).toBeVisible();
+    await user.click(endCallButton);
+    expect(
+      await findByRole("menuitem", { name: "End for everyone" }),
+    ).toBeVisible();
   });
 });

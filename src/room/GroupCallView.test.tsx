@@ -413,10 +413,27 @@ test("translates wrapped UnsupportedStickyEventsEndpointError to the StickyEvent
   await screen.findByText("Homeserver does not support Matrix 2.0 calls");
 });
 
-test("falls back to ConnectionLostError for unrecognised membership manager errors", async () => {
+test("shows ConnectionLostError after automatic recovery attempts are exhausted", async () => {
   const { rtcSession } = createGroupCallView(null, true, {
     withErrorBoundary: true,
   });
+
+  await waitFor(() =>
+    expect(screen.getByTestId("active_call_instance")).toHaveTextContent("1"),
+  );
+  for (const expectedInstance of ["2", "3", "4"]) {
+    await act(() =>
+      rtcSession.emit(
+        MatrixRTCSessionEvent.MembershipManagerError,
+        new Error("something else broke"),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("active_call_instance")).toHaveTextContent(
+        expectedInstance,
+      ),
+    );
+  }
 
   await act(() =>
     rtcSession.emit(
@@ -428,17 +445,33 @@ test("falls back to ConnectionLostError for unrecognised membership manager erro
   await screen.findByText("Connection lost");
 });
 
-test("user can reconnect after a membership manager error", async () => {
+test("user can reconnect after automatic recovery attempts are exhausted", async () => {
   const user = userEvent.setup({
     pointerEventsCheck: PointerEventsCheckLevel.Never,
   });
   const { rtcSession } = createGroupCallView(null, true);
+
+  await waitFor(() =>
+    expect(screen.getByTestId("active_call_instance")).toHaveTextContent("1"),
+  );
+  for (const expectedInstance of ["2", "3", "4"]) {
+    await act(() =>
+      rtcSession.emit(MatrixRTCSessionEvent.MembershipManagerError, undefined),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("active_call_instance")).toHaveTextContent(
+        expectedInstance,
+      ),
+    );
+  }
+
   await act(() =>
     rtcSession.emit(MatrixRTCSessionEvent.MembershipManagerError, undefined),
   );
-  await act(async () =>
-    user.click(screen.getByRole("button", { name: "Reconnect" })),
-  );
+  await waitFor(() => screen.getByRole("button", { name: "Reconnect" }));
+  await act(async () => {
+    await user.click(screen.getByRole("button", { name: "Reconnect" }));
+  });
   await waitFor(() => screen.getByRole("button", { name: "Leave" }));
 });
 
