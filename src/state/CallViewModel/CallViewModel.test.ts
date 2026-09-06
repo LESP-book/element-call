@@ -16,6 +16,7 @@ import {
   NEVER,
   type Observable,
   of,
+  Subject,
   switchMap,
 } from "rxjs";
 import { SyncState } from "matrix-js-sdk";
@@ -68,6 +69,7 @@ import {
 } from "./CallViewModelTestUtils.ts";
 import { MatrixRTCMode } from "../../config/ConfigOptions.ts";
 import { initializeWidget } from "../../widget.ts";
+import { type TerminationEvent } from "../../callTermination";
 
 initializeWidget();
 
@@ -258,11 +260,9 @@ function mockRingEvent(
   } as unknown as { event_id: string } & IRTCNotificationContent;
 }
 
-describe.each([
-  [MatrixRTCMode.Legacy],
-  [MatrixRTCMode.Compatibility],
-  [MatrixRTCMode.Matrix_2_0],
-])("CallViewModel (%s mode)", (mode) => {
+const modes = [[MatrixRTCMode.Compatibility], [MatrixRTCMode.Matrix_2_0]];
+
+describe.each(modes)("CallViewModel (%s mode)", (mode) => {
   const withCallViewModel = withCallViewModelInMode(mode);
 
   test("participants are retained during a focus switch", () => {
@@ -1415,6 +1415,25 @@ describe.each([
       d: [localRtcMember], // Alice leaves
     });
   }
+
+  test("termination events cause the call to leave", () => {
+    const termination$ = new Subject<TerminationEvent>();
+    const leaveReasons: string[] = [];
+
+    withCallViewModel(
+      {},
+      (vm) => {
+        vm.leave$.subscribe((reason) => leaveReasons.push(reason));
+        termination$.next({
+          terminatedBy: aliceUserId,
+          timestamp: 12345,
+        });
+      },
+      { termination$ },
+    );
+
+    expect(leaveReasons).toStrictEqual(["terminated"]);
+  });
 
   test("autoLeave$ emits only when autoLeaveWhenOthersLeft option is enabled", () => {
     withTestScheduler(({ behavior, expectObservable }) => {

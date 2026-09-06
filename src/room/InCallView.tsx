@@ -64,7 +64,6 @@ import { ReactionsOverlay } from "./ReactionsOverlay";
 import { CallEventAudioRenderer } from "./CallEventAudioRenderer";
 import { matrixRTCMode as matrixRTCModeSetting } from "../settings/settings";
 import { ReactionsReader } from "../reactions/ReactionsReader";
-import { CallTerminationReader } from "../callTermination/CallTerminationReader";
 import { LivekitRoomAudioRenderer } from "../livekit/MatrixAudioRenderer.tsx";
 import { muteAllAudio$ } from "../state/MuteAllAudioModel.ts";
 import { useMediaDevices } from "../MediaDevicesContext.ts";
@@ -85,6 +84,8 @@ import { CallFooter, type FooterSnapshot } from "../components/CallFooter.tsx";
 import { HeaderToggleButton } from "../button";
 import { SettingsIconButton } from "../button/Button.tsx";
 import { createCallFooterViewModel } from "../components/CallFooterViewModel.tsx";
+import { createDeveloperSettingsTabViewModel } from "../settings/DeveloperSettingsTabViewModel.ts";
+import { type DeveloperSettingsSnapshot } from "../settings/DeveloperSettingsTab.tsx";
 import { type ViewModel } from "../state/ViewModel.ts";
 import { RingingStatus } from "../tile/RingingStatus.tsx";
 import { RingingAudioRenderer } from "./RingingAudioRenderer.tsx";
@@ -98,7 +99,7 @@ declare module "react" {
 
 export interface ActiveCallProps extends Omit<
   InCallViewProps,
-  "vm" | "livekitRoom" | "connState" | "footerVm"
+  "vm" | "livekitRoom" | "connState" | "footerVm" | "developerSettingsVm"
 > {
   e2eeSystem: EncryptionSystem;
   // TODO refactor those reasons into an enum
@@ -118,6 +119,9 @@ export const ActiveCall: FC<ActiveCallProps> = (props) => {
   const [footerVm, setFooterVm] = useState<ViewModel<FooterSnapshot> | null>(
     null,
   );
+  const [developerSettingsVm, setDeveloperSettingsVm] =
+    useState<ViewModel<DeveloperSettingsSnapshot> | null>(null);
+
   const urlParams = useUrlParams();
   const mediaDevices = useMediaDevices();
   const trackProcessorState$ = useTrackProcessorObservable$();
@@ -125,11 +129,6 @@ export const ActiveCall: FC<ActiveCallProps> = (props) => {
     rootLogger.info("START CALL VIEW SCOPE");
     const scope = new ObservableScope();
     const reactionsReader = new ReactionsReader(scope, props.rtcSession);
-    const terminationReader = new CallTerminationReader(
-      scope,
-      props.rtcSession,
-      props.matrixRoom.client,
-    );
     const { autoLeaveWhenOthersLeft, waitForCallPickup, sendNotificationType } =
       urlParams;
 
@@ -147,7 +146,6 @@ export const ActiveCall: FC<ActiveCallProps> = (props) => {
       },
       reactionsReader.raisedHands$,
       reactionsReader.reactions$,
-      terminationReader.termination$,
       scope.behavior(trackProcessorState$),
     );
     // TODO move this somewhere else once we use the callViewModel in the lobby as well!
@@ -183,6 +181,7 @@ export const ActiveCall: FC<ActiveCallProps> = (props) => {
       `${props.client.getUserId()}:${props.client.getDeviceId()}`,
     );
     setFooterVm(footerVm);
+    setDeveloperSettingsVm(createDeveloperSettingsTabViewModel(scope, vm));
 
     return (): void => {
       scope.end();
@@ -202,10 +201,16 @@ export const ActiveCall: FC<ActiveCallProps> = (props) => {
 
   if (vm === null) return null;
   if (footerVm === null) return null;
+  if (developerSettingsVm === null) return null;
 
   return (
     <ReactionsSenderProvider vm={vm} rtcSession={props.rtcSession}>
-      <InCallView {...props} vm={vm} footerVm={footerVm} />
+      <InCallView
+        {...props}
+        vm={vm}
+        footerVm={footerVm}
+        developerSettingsVm={developerSettingsVm}
+      />
     </ReactionsSenderProvider>
   );
 };
@@ -214,6 +219,7 @@ export interface InCallViewProps {
   client: MatrixClient;
   vm: CallViewModel;
   footerVm: ViewModel<FooterSnapshot>;
+  developerSettingsVm: ViewModel<DeveloperSettingsSnapshot>;
   matrixInfo: MatrixInfo;
   rtcSession: MatrixRTCSession;
   matrixRoom: MatrixRoom;
@@ -225,6 +231,7 @@ export const InCallView: FC<InCallViewProps> = ({
   client,
   vm,
   footerVm,
+  developerSettingsVm,
   matrixInfo,
   matrixRoom,
   muteStates,
@@ -270,12 +277,14 @@ export const InCallView: FC<InCallViewProps> = ({
   const audioParticipants = useBehavior(vm.livekitRoomItems$);
   const participantCount = useBehavior(vm.participantCount$);
   const reconnecting = useBehavior(vm.reconnecting$);
+  const screenShareError = useBehavior(vm.screenShareError$);
   const layout = useBehavior(vm.layout$);
   const edgeToEdge = useBehavior(vm.edgeToEdge$);
   const overflowing = useBehavior(vm.overflowing$);
   const showNameTags = useBehavior(vm.showNameTags$);
   const showHeader = useBehavior(vm.showHeader$);
   const headerPinned = useBehavior(vm.headerPinned$);
+  const showModals = useBehavior(vm.showModals$);
   const settingsOpen = useBehavior(vm.settingsOpen$);
   const setSettingsOpen = useBehavior(vm.setSettingsOpen$);
   const earpieceMode = useBehavior(vm.earpieceMode$);
@@ -398,6 +407,21 @@ export const InCallView: FC<InCallViewProps> = ({
         </Header>
       );
   }
+
+  const onDismissScreenShareToast = useCallback(
+    () => vm.dismissScreenShareError(),
+    [vm],
+  );
+  const screenShareToast = (
+    <Toast
+      onDismiss={onDismissScreenShareToast}
+      open={screenShareError !== null}
+      autoDismiss={5000}
+      modal={false}
+    >
+      {t("error.screen_share_failed")}
+    </Toast>
+  );
 
   // The reconnecting toast cannot be dismissed
   const onDismissReconnectingToast = useCallback(() => {}, []);
@@ -642,10 +666,11 @@ export const InCallView: FC<InCallViewProps> = ({
       <ReactionsAudioRenderer vm={vm} muted={muteAllAudio} />
       <RingingAudioRenderer vm={ringingVm} muted={muteAllAudio} />
       {reconnectingToast}
+      {screenShareToast}
       {earpieceOverlay}
       <ReactionsOverlay vm={vm} />
       {footer}
-      {layout.type !== "pip" && (
+      {showModals && (
         <>
           <RageshakeRequestModal {...rageshakeRequestModalProps} />
           <SettingsModal
@@ -655,6 +680,7 @@ export const InCallView: FC<InCallViewProps> = ({
             onDismiss={(): void => setSettingsOpen(false)}
             tab={settingsTab}
             onTabChange={setSettingsTab}
+            developerSettingsVm={developerSettingsVm}
             livekitRooms={allConnections
               .getConnections()
               .map((connectionItem) => ({

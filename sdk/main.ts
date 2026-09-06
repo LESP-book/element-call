@@ -52,7 +52,6 @@ import { getUrlParams } from "../src/UrlParams";
 import { MuteStates } from "../src/state/MuteStates";
 import { MediaDevices } from "../src/state/MediaDevices";
 import { E2eeType } from "../src/e2ee/e2eeType";
-import { CallTerminationReader } from "../src/callTermination/CallTerminationReader";
 import { currentAndPrev, TEXT_LK_TOPIC, tryMakeSticky } from "./helper";
 import { logger as rootLogger } from "matrix-js-sdk/lib/logger";
 import {
@@ -134,7 +133,6 @@ export async function createMatrixRTCSdk(
     audioEnabled: false,
     videoEnabled: false,
   });
-  const terminationReader = new CallTerminationReader(scope, rtcSession, client);
 
   // call view model
   const callViewModel = createCallViewModel$(
@@ -146,7 +144,6 @@ export async function createMatrixRTCSdk(
     { encryptionSystem: { kind: E2eeType.PER_PARTICIPANT } },
     of({}),
     of({}),
-    terminationReader.termination$,
     constant({ supported: false, processor: undefined }),
   );
   logger.info("CallViewModelCreated");

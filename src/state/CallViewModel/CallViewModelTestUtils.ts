@@ -239,11 +239,11 @@ export function withCallViewModel(mode: MatrixRTCMode) {
           },
         },
         matrixRTCMode$: constant(mode),
+        termination$: NEVER,
         ...options,
       },
       raisedHands$,
       reactions$,
-      NEVER,
       new BehaviorSubject<ProcessorState>({
         processor: undefined,
         supported: undefined,

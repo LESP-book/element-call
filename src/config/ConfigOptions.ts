@@ -12,9 +12,7 @@ Please see LICENSE in the repository root for full details.
  * Settings, or pinned for a deployment via `matrix_rtc_mode` in config.json.
  */
 export enum MatrixRTCMode {
-  /** Legacy single-SFU + user-keyed memberships + legacy JWT endpoint. */
-  Legacy = "legacy",
-  /** Multi-SFU transport, legacy JWT endpoint, no sticky events. */
+  /** Multi-SFU transport, legacy JWT endpoint, state events. */
   Compatibility = "compatibility",
   /**
    * Multi-SFU transport with:
@@ -86,15 +84,6 @@ export interface ConfigOptions {
      * Allow to join group calls without audio and video.
      */
     feature_group_calls_without_video_and_audio?: boolean;
-
-    /**
-     * Send device-specific call session membership state events instead of
-     * legacy user-specific call membership state events.
-     * This setting has no effect when the user joins an active call with
-     * legacy state events. For compatibility, Element Call will always join
-     * active legacy calls with legacy state events.
-     */
-    feature_use_device_session_member_events?: boolean;
   };
 
   /**
@@ -179,7 +168,8 @@ export interface ConfigOptions {
   /**
    * Pins the {@link MatrixRTCMode} for all clients on this deployment,
    * overriding any per-user choice from the Developer Settings. If unset,
-   * the user's Developer Settings choice (or its default of `Legacy`) wins.
+   * the user's Developer Settings choice (or its default of `Compatibility`)
+   * wins.
    */
   matrix_rtc_mode?: MatrixRTCMode;
 
@@ -229,6 +219,18 @@ export interface ConfigOptions {
      * This is what goes into the m.rtc.member event expiry field and is typically set to a number of hours.
      */
     membership_event_expiry_ms?: number;
+
+    /**
+     * The number of participants in the session at which the media encryption key will no longer
+     * be rotated.
+     *
+     * Rotating a key requires sending it to every participant device, so in large sessions the
+     * cost of rotating on every join/leave becomes prohibitive. At this limit the current key is
+     * kept and distributed to new joiners; no new keys are generated for joiners/leavers.
+     *
+     * Defaults to the js-sdk default (undefined). Which means that rotation will always happen.
+     */
+    key_rotation_participant_limit?: number;
   };
 }
 
@@ -262,13 +264,11 @@ export interface ResolvedConfigOptions extends ConfigOptions {
     delayed_leave_event_restart_ms?: number;
     network_error_retry_ms: number;
     membership_event_expiry_ms?: number;
+    key_rotation_participant_limit?: number;
   };
 }
 
 export const DEFAULT_CONFIG: ResolvedConfigOptions = {
-  features: {
-    feature_use_device_session_member_events: true,
-  },
   sync_disconnect_grace_period_ms: 10000,
   ssla: "https://static.element.io/legal/element-software-and-services-license-agreement-uk-1.pdf",
   media_quality: {

@@ -31,6 +31,7 @@ import {
   flushPromises,
   mockConfig,
   mockLivekitRoom,
+  mockLocalParticipant,
   mockMuteStates,
   withTestScheduler,
   ownMemberMock,
@@ -41,6 +42,7 @@ import {
   enterRTCSession,
   PublishState,
   TrackState,
+  watchScreenShareToggle,
 } from "./LocalMember";
 import {
   FailToGetOpenIdToken,
@@ -59,7 +61,7 @@ import {
 
 initializeWidget();
 
-const MATRIX_RTC_MODE = MatrixRTCMode.Legacy;
+const MATRIX_RTC_MODE = MatrixRTCMode.Compatibility;
 const getUrlParams = vi.hoisted(() => vi.fn(() => ({})));
 vi.mock("../../../UrlParams", () => ({ getUrlParams }));
 vi.mock("@livekit/components-core", () => ({
@@ -68,15 +70,34 @@ vi.mock("@livekit/components-core", () => ({
     .mockReturnValue(of({ isScreenShareEnabled: false })),
 }));
 
+describe("watchScreenShareToggle", () => {
+  it("reports nothing when the toggle completes", async () => {
+    const onError = vi.fn();
+    watchScreenShareToggle(Promise.resolve(), true, logger, onError);
+    await flushPromises();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("reports failures other than the user cancelling", async () => {
+    const onError = vi.fn();
+    const e = new Error("NotReadableError");
+    watchScreenShareToggle(Promise.reject(e), true, logger, onError);
+    await flushPromises();
+    expect(onError).toHaveBeenCalledWith(e);
+  });
+
+  it("does not report the user cancelling the picker", async () => {
+    const onError = vi.fn();
+    const cancelled = new DOMException("Permission denied", "NotAllowedError");
+    watchScreenShareToggle(Promise.reject(cancelled), true, logger, onError);
+    await flushPromises();
+    expect(onError).not.toHaveBeenCalled();
+  });
+});
+
 describe("LocalMembership", () => {
   describe("enterRTCSession", () => {
     it("It joins the correct Session", () => {
-      const focusFromOlderMembership = {
-        type: "livekit",
-        livekit_service_url: "http://my-oldest-member-service-url.com",
-        livekit_alias: "my-oldest-member-service-alias",
-      };
-
       mockConfig({
         livekit: { livekit_service_url: "http://my-default-service-url.com" },
       });
@@ -95,10 +116,6 @@ describe("LocalMembership", () => {
           },
         },
         memberships: [],
-        getFocusInUse: vi.fn().mockReturnValue(focusFromOlderMembership),
-        getOldestMembership: vi.fn().mockReturnValue({
-          getPreferredFoci: vi.fn().mockReturnValue([focusFromOlderMembership]),
-        }),
         joinRTCSession: vi.fn(),
       }) as unknown as MatrixRTCSession;
 
@@ -122,17 +139,63 @@ describe("LocalMembership", () => {
           memberId: "@alice:example.org:DEVICE",
           userId: "@alice:example.org",
         },
-        [
-          {
-            livekit_alias: "roomId",
-            livekit_service_url: "http://my-livekit-service-url.com",
-            type: "livekit",
+        [],
+        {
+          livekit_alias: "roomId",
+          livekit_service_url: "http://my-livekit-service-url.com",
+          type: "livekit",
+        },
+        expect.objectContaining({ manageMediaKeys: true }),
+      );
+    });
+
+    it("passes keyRotationParticipantLimit from config to joinRTCSession", () => {
+      mockConfig({
+        livekit: { livekit_service_url: "http://my-default-service-url.com" },
+        matrix_rtc_session: {
+          delayed_leave_event_delay_ms: 0,
+          network_error_retry_ms: 0,
+          key_rotation_participant_limit: 50,
+        },
+      });
+
+      const mockedSession = vi.mocked({
+        room: {
+          roomId: "roomId",
+          client: {
+            getDomain: vi.fn().mockReturnValue("example.org"),
+            getOpenIdToken: vi.fn().mockResolvedValue({
+              access_token: "ACCCESS_TOKEN",
+              token_type: "Bearer",
+              matrix_server_name: "localhost",
+              expires_in: 10000,
+            }),
           },
-        ],
-        undefined,
+        },
+        memberships: [],
+        joinRTCSession: vi.fn(),
+      }) as unknown as MatrixRTCSession;
+
+      enterRTCSession(
+        mockedSession,
+        ownMemberMock,
+        {
+          livekit_alias: "roomId",
+          livekit_service_url: "http://my-livekit-service-url.com",
+          type: "livekit",
+        },
+        {
+          encryptMedia: true,
+          matrixRTCMode: MATRIX_RTC_MODE,
+        },
+      );
+
+      expect(mockedSession.joinRTCSession).toHaveBeenLastCalledWith(
+        expect.any(Object),
+        [],
+        expect.any(Object),
         expect.objectContaining({
-          manageMediaKeys: true,
-          useLegacyMemberEvents: false,
+          keyRotationParticipantLimit: 50,
         }),
       );
     });
@@ -814,6 +877,100 @@ describe("LocalMembership", () => {
         "probablyLeft",
         expect.any(Number),
       );
+
+      scope.end();
+    });
+  });
+
+  describe("toggleScreenSharing", () => {
+    let originalMediaDevices: MediaDevices | undefined;
+
+    beforeAll(() => {
+      mockConfig();
+      // Screen sharing is only offered when getDisplayMedia is available.
+      originalMediaDevices = navigator.mediaDevices;
+      Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: { getDisplayMedia: vi.fn() },
+      });
+    });
+
+    afterAll(() => {
+      Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: originalMediaDevices,
+      });
+    });
+
+    const createMembershipWithConnection = (
+      connection: Connection | null,
+    ): {
+      scope: ObservableScope;
+      localMembership: ReturnType<typeof createLocalMembership$>;
+    } => {
+      const scope = new ObservableScope();
+      const connectionManagerData = new ConnectionManagerData();
+      if (connection) connectionManagerData.add(connection, []);
+      const localMembership = createLocalMembership$({
+        scope,
+        ...defaultCreateLocalMemberValues,
+        connectionManager: {
+          connectionManagerData$: constant(new Epoch(connectionManagerData)),
+        },
+        localTransport$: new BehaviorSubject({
+          advertised$: new BehaviorSubject(aTransport),
+          active$: new BehaviorSubject(aTransportWithSFUConfig),
+        }),
+      });
+      return { scope, localMembership };
+    };
+
+    it("surfaces a failure and clears it on dismiss", async () => {
+      const error = new Error("NotReadableError");
+      const setScreenShareEnabled = vi.fn().mockRejectedValue(error);
+      const connection = {
+        state$: constant(ConnectionState.LivekitConnected),
+        transport: aTransport,
+        livekitRoom: mockLivekitRoom({
+          localParticipant: mockLocalParticipant({
+            isScreenShareEnabled: false,
+            setScreenShareEnabled,
+          }),
+        }),
+      } as unknown as Connection;
+      const { scope, localMembership } =
+        createMembershipWithConnection(connection);
+      await flushPromises();
+
+      expect(localMembership.toggleScreenSharing).not.toBeNull();
+      expect(localMembership.screenShareError$.value).toBeNull();
+
+      localMembership.toggleScreenSharing!();
+      await flushPromises();
+
+      expect(setScreenShareEnabled).toHaveBeenCalledWith(
+        true,
+        expect.any(Object),
+        undefined,
+      );
+      expect(localMembership.screenShareError$.value).toBe(error);
+
+      localMembership.dismissScreenShareError();
+      expect(localMembership.screenShareError$.value).toBeNull();
+
+      scope.end();
+    });
+
+    it("does nothing when there is no local participant", async () => {
+      // No connection means participant$ never resolves to a participant.
+      const { scope, localMembership } = createMembershipWithConnection(null);
+      await flushPromises();
+
+      expect(localMembership.toggleScreenSharing).not.toBeNull();
+      localMembership.toggleScreenSharing!();
+      await flushPromises();
+
+      expect(localMembership.screenShareError$.value).toBeNull();
 
       scope.end();
     });

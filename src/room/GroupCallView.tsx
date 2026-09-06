@@ -596,6 +596,9 @@ export const GroupCallView: FC<Props> = ({
           return;
         }
         if (rtcSession.isJoined()) onLeft("error");
+        // If there is an error we need to be able to close the widget. This is done in `onLeft` as well
+        // We need it here explicitly in case rtcSession.isJoined is false.
+        void widget?.api.setAlwaysOnScreen(false);
       }}
     >
       {body}

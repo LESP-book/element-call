@@ -162,6 +162,7 @@ export function createCallFooterViewModel(
     // candidat to move into the FooterViewModel
     showFooter$: callModel.showFooter$,
     hideControls$: constant(!showControls),
+    showModals$: callModel.showModals$,
     asOverlay$: callModel.edgeToEdge$,
     buttonSize$: scope.behavior(
       isPip$.pipe(map<boolean, "md" | "lg">((pip) => (pip ? "md" : "lg"))),
@@ -169,12 +170,12 @@ export function createCallFooterViewModel(
 
     openSettings$: scope.behavior(
       combineLatest([
-        isPip$,
+        callModel.showModals$,
         callModel.showHeader$,
         callModel.setSettingsOpen$,
       ]).pipe(
-        map(([isPip, showHeader, setSettingsOpen]) =>
-          !isPip && headerStyle !== HeaderStyle.AppBar && showControls
+        map(([showModals, showHeader, setSettingsOpen]) =>
+          showModals && headerStyle !== HeaderStyle.AppBar && showControls
             ? (): void => setSettingsOpen(true)
             : undefined,
         ),
@@ -246,6 +247,7 @@ export function createLobbyFooterViewModel(
       showLogo,
       hideControls: false,
       asOverlay: false,
+      showModals: true,
       buttonSize: "lg",
       openSettings,
       hangup,
