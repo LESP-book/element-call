@@ -120,6 +120,11 @@ export const widgetTest = test.extend<MyFixtures>({
           .getByRole("heading", { name: "Welcome Room" }),
       ).toBeVisible();
     } else if (callType === "dm") {
+      await TestHelpers.closeReleaseAnnouncement(
+        ewPage1,
+        "Introducing Sections",
+      );
+
       await ewPage1
         .getByRole("navigation", { name: "Room list" })
         .getByRole("button", { name: "New conversation" })
@@ -148,7 +153,7 @@ export const widgetTest = test.extend<MyFixtures>({
 
       // Accept the DM invite from brooks
       // This how playwright record selects the DM invite in the room list
-      await ewPage2.getByRole("option", { name: "Open room" }).click();
+      await ewPage2.getByRole("button", { name: "Open room" }).click();
       await ewPage2.getByRole("button", { name: "Start chatting" }).click();
     }
 

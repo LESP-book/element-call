@@ -15,7 +15,7 @@ import {
   type TrackPublication,
 } from "livekit-client";
 import { SyncState } from "matrix-js-sdk/lib/sync";
-import { BehaviorSubject, combineLatest, map, NEVER, of } from "rxjs";
+import { BehaviorSubject, combineLatest, map, of } from "rxjs";
 import { onTestFinished, vi } from "vitest";
 import { ClientEvent, type RoomMember, type MatrixClient } from "matrix-js-sdk";
 import EventEmitter from "events";
@@ -56,7 +56,8 @@ import {
 import { type Behavior, constant } from "../Behavior";
 import { type ProcessorState } from "../../livekit/TrackProcessorContext";
 import { type MediaDevices } from "../MediaDevices";
-import { type MatrixRTCMode } from "../../settings/settings";
+import { type MatrixRTCMode } from "../../config/ConfigOptions";
+import { type ObservableScope } from "../ObservableScope";
 
 mockConfig({
   livekit: { livekit_service_url: "http://my-default-service-url.com" },
@@ -112,6 +113,7 @@ export function withCallViewModel(mode: MatrixRTCMode) {
         raisedHands$: BehaviorSubject<Record<string, RaisedHandInfo>>;
       },
       setSyncState: (value: SyncState) => void,
+      scope: ObservableScope,
     ) => void,
     options: Partial<CallViewModelOptions> = {},
   ): void => {
@@ -137,9 +139,6 @@ export function withCallViewModel(mode: MatrixRTCMode) {
 
         public getSyncState(): SyncState {
           return syncState;
-        }
-        public getAccessToken(): string | null {
-          return "a-token";
         }
       })() as Partial<MatrixClient> as MatrixClient,
       getMembers: () => roomMembers,
@@ -200,8 +199,9 @@ export function withCallViewModel(mode: MatrixRTCMode) {
         setE2EEEnabled: async () => Promise.resolve(),
       });
 
+    const scope = testScope();
     const vm = createCallViewModel$(
-      testScope(),
+      scope,
       rtcSession.asMockedSession(),
       room,
       mediaDevices,
@@ -246,7 +246,6 @@ export function withCallViewModel(mode: MatrixRTCMode) {
       },
       raisedHands$,
       reactions$,
-      NEVER,
       new BehaviorSubject<ProcessorState>({
         processor: undefined,
         supported: undefined,
@@ -260,6 +259,12 @@ export function withCallViewModel(mode: MatrixRTCMode) {
       roomEventSelectorSpy.mockRestore();
     });
 
-    continuation(vm, rtcSession, { raisedHands$: raisedHands$ }, setSyncState);
+    continuation(
+      vm,
+      rtcSession,
+      { raisedHands$: raisedHands$ },
+      setSyncState,
+      scope,
+    );
   };
 }

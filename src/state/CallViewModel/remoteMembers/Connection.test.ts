@@ -19,14 +19,17 @@ import {
 import {
   type LocalParticipant,
   type RemoteParticipant,
+  type RemoteTrack,
+  type RemoteTrackPublication,
   type Room as LivekitRoom,
   RoomEvent,
+  Track,
   ConnectionState as LivekitConnectionState,
 } from "livekit-client";
 import fetchMock from "fetch-mock";
 import EventEmitter from "events";
 import { type IOpenIDToken } from "matrix-js-sdk";
-import { logger } from "matrix-js-sdk/lib/logger";
+import { logger, type Logger } from "matrix-js-sdk/lib/logger";
 import { type LivekitTransportConfig } from "matrix-js-sdk/lib/matrixrtc";
 
 import {
@@ -260,7 +263,10 @@ describe("Start connection states", () => {
       await deferredSFU.promise;
       return {
         status: 500,
-        body: "Internal Server Error",
+        body: {
+          errcode: "M_LOOKUP_FAILED",
+          error: "Failed to look up user info from homeserver",
+        },
       };
     });
 
@@ -282,7 +288,7 @@ describe("Start connection states", () => {
       capturedState.cause instanceof Error
     ) {
       expect(capturedState.cause.message).toContain(
-        "SFU Config fetch failed with status code 500",
+        "Failed to look up user info from homeserver",
       );
       expect(connection.transport.livekit_alias).toEqual(
         livekitFocus.livekit_alias,
@@ -503,6 +509,79 @@ describe("remote participants", () => {
     );
 
     expect(observedParticipants.length).toEqual(0);
+  });
+});
+
+describe("remote track logging", () => {
+  it("logs remote participant and track events on the connection logger", () => {
+    setupTest();
+    const info = vi.fn();
+    const testLogger = {
+      getChild: (): unknown => testLogger,
+      info,
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    } as unknown as Logger;
+    new Connection(
+      {
+        client,
+        roomId: ROOM_ID,
+        transport: livekitFocus,
+        scope: testScope,
+        ownMembershipIdentity: ownMemberMock,
+        livekitRoomFactory: () => fakeLivekitRoom,
+      },
+      testLogger,
+    );
+    info.mockClear(); // drop the constructor log line
+
+    const bob = mockRemoteParticipant({
+      identity: "@bob:example.org:DEV111",
+      sid: "PA_bob",
+    });
+    const pub = {
+      kind: "audio",
+      source: "microphone",
+      trackSid: "TR_mic",
+      isMuted: false,
+    } as unknown as RemoteTrackPublication;
+    const messages = (): string[] => info.mock.calls.map((c) => c[0] as string);
+
+    fakeLivekitRoom.emit(RoomEvent.ParticipantConnected, bob);
+    fakeLivekitRoom.emit(
+      RoomEvent.TrackSubscribed,
+      {} as RemoteTrack,
+      pub,
+      bob,
+    );
+    fakeLivekitRoom.emit(RoomEvent.TrackMuted, pub, bob);
+    fakeLivekitRoom.emit(
+      RoomEvent.TrackStreamStateChanged,
+      pub,
+      Track.StreamState.Paused,
+      bob,
+    );
+    expect(messages()).toEqual([
+      "Participant connected: @bob:example.org:DEV111 (PA_bob)",
+      "Subscribed: audio microphone TR_mic of @bob:example.org:DEV111 muted=false",
+      "Muted: audio microphone TR_mic of @bob:example.org:DEV111",
+      "Stream paused: audio microphone TR_mic of @bob:example.org:DEV111",
+    ]);
+
+    // Local mute events are already logged by the Publisher
+    fakeLivekitRoom.emit(RoomEvent.TrackMuted, pub, {
+      ...fakeLocalParticipant,
+      isLocal: true,
+    } as unknown as LocalParticipant);
+    expect(messages().filter((m) => m.startsWith("Muted"))).toHaveLength(1);
+
+    // Listeners are removed when the scope ends
+    testScope.end();
+    fakeLivekitRoom.emit(RoomEvent.ParticipantDisconnected, bob);
+    expect(
+      messages().filter((m) => m.startsWith("Participant disconnected")),
+    ).toHaveLength(0);
   });
 });
 

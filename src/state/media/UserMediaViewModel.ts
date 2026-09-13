@@ -9,7 +9,6 @@ Please see LICENSE in the repository root for full details.
 import {
   BehaviorSubject,
   combineLatest,
-  filter,
   map,
   type Observable,
   of,
@@ -17,7 +16,6 @@ import {
   switchMap,
 } from "rxjs";
 import {
-  type TrackReferenceOrPlaceholder,
   observeParticipantEvents,
   observeParticipantMedia,
 } from "@livekit/components-core";
@@ -25,7 +23,6 @@ import { ParticipantEvent, Track } from "livekit-client";
 
 import { type ReactionOption } from "../../reactions";
 import { type Behavior } from "../Behavior";
-import { observeTrackReference$ } from "../observeTrackReference";
 import { type LocalUserMediaViewModel } from "./LocalUserMediaViewModel";
 import {
   createMemberMedia,
@@ -36,7 +33,6 @@ import { type RemoteUserMediaViewModel } from "./RemoteUserMediaViewModel";
 import { type ObservableScope } from "../ObservableScope";
 import { showConnectionStats } from "../../settings/settings";
 import { observeRtpStreamStats$ } from "./observeRtpStreamStats";
-import { videoFit$, videoSizeFromParticipant$ } from "../../utils/videoFit.ts";
 
 /**
  * A participant's user media (i.e. their microphone and camera feed).
@@ -45,21 +41,13 @@ export type UserMediaViewModel =
   | LocalUserMediaViewModel
   | RemoteUserMediaViewModel;
 
-export type DisplaySource = "camera" | "screen";
-
 export interface BaseUserMediaViewModel extends BaseMemberMediaViewModel {
   type: "user";
   speaking$: Behavior<boolean>;
   audioEnabled$: Behavior<boolean>;
   videoEnabled$: Behavior<boolean>;
-  screenVideo$: Behavior<TrackReferenceOrPlaceholder | undefined>;
-  hasScreenShare$: Behavior<boolean>;
-  displaySource$: Behavior<DisplaySource>;
-  activeVideo$: Behavior<TrackReferenceOrPlaceholder | undefined>;
-  activeVideoEnabled$: Behavior<boolean>;
-  videoFit$: Behavior<"cover" | "contain">;
+  videoOrientation$: Behavior<"landscape" | "portrait">;
   toggleCropVideo: () => void;
-  toggleDisplaySource: () => void;
   /**
    * The expected identity of the LiveKit participant. Exposed for debugging.
    */
@@ -73,12 +61,9 @@ export interface BaseUserMediaViewModel extends BaseMemberMediaViewModel {
     RTCInboundRtpStreamStats | RTCOutboundRtpStreamStats | undefined
   >;
   /**
-   * Set the target dimensions of the HTML element (final dimension after anim).
-   * This can be used to determine the best video fit (fit to frame / keep ratio).
-   * @param targetWidth - The target width of the HTML element displaying the video.
-   * @param targetHeight - The target height of the HTML element displaying the video.
+   * Set the aspect ratio of the video track to determine the orientation.
    */
-  setTargetDimensions: (targetWidth: number, targetHeight: number) => void;
+  setVideoAspectRatio: (ratio: number) => void;
 }
 
 export interface BaseUserMediaInputs extends Omit<
@@ -108,60 +93,14 @@ export function createBaseUserMedia(
     ),
   );
   const toggleCropVideo$ = new Subject<void>();
-  const displaySource$ = new BehaviorSubject<DisplaySource>("camera");
-  const memberMedia = createMemberMedia(scope, {
-    ...inputs,
-    audioSource: Track.Source.Microphone,
-    videoSource: Track.Source.Camera,
-  });
-  const screenVideo$ = scope.behavior(
-    participant$.pipe(
-      switchMap((p) =>
-        p ? observeTrackReference$(p, Track.Source.ScreenShare) : of(undefined),
-      ),
-    ),
-  );
-  const hasScreenShare$ = scope.behavior(
-    screenVideo$.pipe(map((track) => track?.publication !== undefined)),
-  );
-  const screenVideoEnabled$ = scope.behavior(
-    screenVideo$.pipe(map((track) => track?.publication?.isMuted === false)),
-  );
-  const videoEnabled$ = scope.behavior(
-    media$.pipe(map((m) => m?.cameraTrack?.isMuted === false)),
-  );
-  const activeVideo$ = scope.behavior(
-    combineLatest([displaySource$, memberMedia.video$, screenVideo$]).pipe(
-      map(([source, camera, screen]) =>
-        source === "screen" && screen?.publication ? screen : camera,
-      ),
-    ),
-  );
-  const activeVideoEnabled$ = scope.behavior(
-    combineLatest([displaySource$, videoEnabled$, screenVideoEnabled$]).pipe(
-      map(([source, cameraEnabled, screenEnabled]) =>
-        source === "screen" ? screenEnabled : cameraEnabled,
-      ),
-    ),
-  );
-
-  combineLatest([hasScreenShare$, displaySource$])
-    .pipe(
-      filter(([hasScreenShare, displaySource]) => !hasScreenShare && displaySource === "screen"),
-      scope.bind(),
-    )
-    .subscribe(() => {
-      displaySource$.next("camera");
-    });
-
-  // The target size of the video element, used to determine the best video fit.
-  // The target size is the final size of the HTML element after any animations have completed.
-  const targetSize$ = new BehaviorSubject<
-    { width: number; height: number } | undefined
-  >(undefined);
+  const videoAspectRatio$ = new BehaviorSubject(NaN);
 
   return {
-    ...memberMedia,
+    ...createMemberMedia(scope, {
+      ...inputs,
+      audioSource: Track.Source.Microphone,
+      videoSource: Track.Source.Camera,
+    }),
     type: "user",
     speaking$: scope.behavior(
       participant$.pipe(
@@ -178,25 +117,16 @@ export function createBaseUserMedia(
     audioEnabled$: scope.behavior(
       media$.pipe(map((m) => m?.microphoneTrack?.isMuted === false)),
     ),
-    videoEnabled$,
-    screenVideo$,
-    hasScreenShare$,
-    displaySource$: scope.behavior(displaySource$),
-    activeVideo$,
-    activeVideoEnabled$,
-    videoFit$: videoFit$(
-      scope,
-      videoSizeFromParticipant$(participant$),
-      targetSize$,
+    videoEnabled$: scope.behavior(
+      media$.pipe(map((m) => m?.cameraTrack?.isMuted === false)),
+    ),
+    videoOrientation$: scope.behavior(
+      videoAspectRatio$.pipe(
+        map((aspect) => (aspect > 1 ? "landscape" : "portrait")),
+      ),
+      "portrait",
     ),
     toggleCropVideo: () => toggleCropVideo$.next(),
-    toggleDisplaySource: (): void => {
-      const current = displaySource$.value;
-      const next = current === "camera" ? "screen" : "camera";
-      if (next === "camera" || hasScreenShare$.value) {
-        displaySource$.next(next);
-      }
-    },
     rtcBackendIdentity,
     handRaised$,
     reaction$,
@@ -219,8 +149,6 @@ export function createBaseUserMedia(
         return observeRtpStreamStats$(p, Track.Source.Camera, statsType);
       }),
     ),
-    setTargetDimensions: (targetWidth: number, targetHeight: number): void => {
-      targetSize$.next({ width: targetWidth, height: targetHeight });
-    },
+    setVideoAspectRatio: (ratio) => videoAspectRatio$.next(ratio),
   };
 }

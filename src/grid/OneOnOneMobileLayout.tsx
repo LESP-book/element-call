@@ -9,23 +9,23 @@ Please see LICENSE in the repository root for full details.
 import { type ReactNode, useCallback } from "react";
 import classNames from "classnames";
 
-import { type OneOnOnePortraitLayout as OneOnOnePortraitLayoutModel } from "../state/layout-types.ts";
+import { type OneOnOneMobileLayout as OneOnOneMobileLayoutModel } from "../state/layout-types.ts";
 import { type CallLayout } from "./CallLayout";
-import styles from "./OneOnOnePortraitLayout.module.css";
+import styles from "./OneOnOneMobileLayout.module.css";
 import { type DragCallback, useUpdateLayout } from "./Grid";
 import { useBehavior } from "../useBehavior";
 
 /**
- * An implementation of the "one-on-one" layout for portrait screens, in which
+ * An implementation of the "one-on-one" layout for mobile platforms, in which
  * the remote participant is shown at maximum size, overlaid by a small view of
  * the local participant.
  */
-export const makeOneOnOnePortraitLayout: CallLayout<
-  OneOnOnePortraitLayoutModel
+export const makeOneOnOneMobileLayout: CallLayout<
+  OneOnOneMobileLayoutModel
 > = () => ({
   foreground: "scrolling",
 
-  fixed: function OneOnOnePortraitLayoutFixed({ ref, model, Slot }): ReactNode {
+  fixed: function OneOnOneMobileLayoutFixed({ ref, model, Slot }): ReactNode {
     useUpdateLayout();
     return (
       <div ref={ref} className={styles.layer}>
@@ -38,7 +38,7 @@ export const makeOneOnOnePortraitLayout: CallLayout<
     );
   },
 
-  scrolling: function OneOnOnePortraitLayoutScrolling({
+  scrolling: function OneOnOneMobileLayoutScrolling({
     ref,
     model,
     Slot,

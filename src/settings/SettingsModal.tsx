@@ -29,11 +29,16 @@ import { PreferencesSettingsTab } from "./PreferencesSettingsTab";
 import { Slider } from "../Slider";
 import { DeviceSelection } from "./DeviceSelection";
 import { useTrackProcessor } from "../livekit/TrackProcessorContext";
-import { DeveloperSettingsTab } from "./DeveloperSettingsTab";
+import {
+  DeveloperSettingsTab,
+  type DeveloperSettingsSnapshot,
+} from "./DeveloperSettingsTab";
 import { FieldRow, InputField } from "../input/Input";
 import { useSubmitRageshake } from "./submit-rageshake";
 import { useUrlParams } from "../UrlParams";
 import { useBehavior } from "../useBehavior";
+import { type ViewModel } from "../state/ViewModel.ts";
+import { outOfCallDeveloperSettingsTabViewModel } from "./DeveloperSettingsTabViewModel";
 
 type SettingsTab =
   | "audio"
@@ -56,6 +61,8 @@ interface Props {
     url: string;
     isLocal?: boolean;
   }[];
+  /** Only available while in a call. Used by the developer tab. */
+  developerSettingsVm?: ViewModel<DeveloperSettingsSnapshot>;
 }
 
 export const defaultSettingsTab: SettingsTab = "audio";
@@ -68,6 +75,7 @@ export const SettingsModal: FC<Props> = ({
   client,
   roomId,
   livekitRooms,
+  developerSettingsVm,
 }) => {
   const { t } = useTranslation();
 
@@ -100,7 +108,7 @@ export const SettingsModal: FC<Props> = ({
 
   const devices = useMediaDevices();
   useEffect(() => {
-    if (open) devices.requestDeviceNames();
+    if (open) devices.requestDeviceNames(); // No-op after the first call
   }, [open, devices]);
 
   const [soundVolume, setSoundVolume] = useSetting(soundEffectVolumeSetting);
@@ -152,7 +160,13 @@ export const SettingsModal: FC<Props> = ({
           />
 
           <div className={styles.volumeSlider}>
-            <label>{t("settings.audio_tab.effect_volume_label")}</label>
+            <label>
+              {t("settings.audio_tab.effect_volume_label")}
+              {": "}
+              <span className={styles.settingValue}>
+                {Math.round(soundVolumeRaw * 100)}%
+              </span>
+            </label>
             <p>{t("settings.audio_tab.effect_volume_description")}</p>
             <Slider
               label={t("video_tile.volume")}
@@ -214,6 +228,7 @@ export const SettingsModal: FC<Props> = ({
         client={client}
         livekitRooms={livekitRooms}
         roomId={roomId}
+        vm={developerSettingsVm ?? outOfCallDeveloperSettingsTabViewModel}
       />
     ),
   };

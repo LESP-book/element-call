@@ -6,7 +6,7 @@ Please see LICENSE in the repository root for full details.
 */
 
 import { type CallMembership } from "matrix-js-sdk/lib/matrixrtc";
-import { BehaviorSubject, NEVER } from "rxjs";
+import { BehaviorSubject } from "rxjs";
 import { vitest } from "vitest";
 import { type RelationsContainer } from "matrix-js-sdk/lib/models/relations-container";
 import EventEmitter from "events";
@@ -38,10 +38,12 @@ import { type MediaDevices } from "../state/MediaDevices";
 import { aliceRtcMember, localRtcMember } from "./test-fixtures";
 import { type RaisedHandInfo, type ReactionInfo } from "../reactions";
 import { constant } from "../state/Behavior";
-import { MatrixRTCMode } from "../settings/settings";
+import { MatrixRTCMode } from "../config/ConfigOptions";
 import { createCallFooterViewModel } from "../components/CallFooterViewModel";
 import { type FooterSnapshot } from "../components/CallFooter";
 import { type ViewModel } from "../state/ViewModel";
+import { createDeveloperSettingsTabViewModel } from "../settings/DeveloperSettingsTabViewModel";
+import { type DeveloperSettingsSnapshot } from "../settings/DeveloperSettingsTab";
 
 mockConfig({ livekit: { livekit_service_url: "https://example.com" } });
 
@@ -128,8 +130,8 @@ export function getBasicRTCSession(
 
 /**
  * Construct a basic CallViewModel to test components that make use of it.
- * @param members
- * @param initialRtcMemberships
+ * @param members - Room members to include in the call.
+ * @param initialRtcMemberships - RTC memberships to start with.
  * @returns
  */
 export function getBasicCallViewModelEnvironment(
@@ -140,6 +142,7 @@ export function getBasicCallViewModelEnvironment(
 ): {
   vm: CallViewModel;
   footerVm: ViewModel<FooterSnapshot>;
+  developerSettingsVm: ViewModel<DeveloperSettingsSnapshot>;
   rtcMemberships$: BehaviorSubject<CallMembership[]>;
   rtcSession: MockRTCSession;
   handRaisedSubject$: BehaviorSubject<Record<string, RaisedHandInfo>>;
@@ -171,12 +174,11 @@ export function getBasicCallViewModelEnvironment(
           setE2EEEnabled: async () => Promise.resolve(),
         }),
       connectionState$: constant(ConnectionState.Connected),
-      matrixRTCMode$: constant(MatrixRTCMode.Legacy),
+      matrixRTCMode$: constant(MatrixRTCMode.Compatibility),
       ...callViewModelOptions,
     },
     handRaisedSubject$,
     reactionsSubject$,
-    NEVER,
     constant({ processor: undefined, supported: false }),
   );
   const footerVm = createCallFooterViewModel(
@@ -189,6 +191,7 @@ export function getBasicCallViewModelEnvironment(
   return {
     vm,
     footerVm,
+    developerSettingsVm: createDeveloperSettingsTabViewModel(testScope(), vm),
     rtcMemberships$,
     rtcSession,
     handRaisedSubject$: handRaisedSubject$,

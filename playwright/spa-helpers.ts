@@ -101,9 +101,7 @@ async function setRtcModeFromSettings(
 
   // Move to Developer tab now
   await page.getByRole("tab", { name: "Developer" }).click();
-  if (mode == "legacy") {
-    await page.getByText("Legacy: state events").click();
-  } else if (mode == "2_0") {
+  if (mode == "2_0") {
     await page.getByText("Matrix 2.0").click();
   } else {
     // compat
@@ -125,21 +123,10 @@ async function expectVideoTilesCount(page: Page, count: number): Promise<void> {
   });
 
   // There should be `count` video elements, visible and autoplaying
-  await expect(page.locator("video")).toHaveCount(count);
-
-  await expect(async () => {
-    const videoBlockCount = await page
-      .locator("video")
-      .evaluateAll(
-        (videos: Element[]) =>
-          videos.filter(
-            (v: Element) => window.getComputedStyle(v).display === "block",
-          ).length,
-      );
-    expect(videoBlockCount).toBe(count);
-  }).toPass({
-    timeout: 10000,
-  });
+  await expect(page.locator("video").filter({ visible: true })).toHaveCount(
+    count,
+    { timeout: 10000 },
+  );
 }
 
 export const SpaHelpers = {

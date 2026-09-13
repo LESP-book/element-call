@@ -11,6 +11,7 @@ import {
   type LocalParticipant,
   type LocalTrack,
   type ScreenShareCaptureOptions,
+  type TrackPublishOptions,
   RoomEvent,
   MediaDeviceFailure,
 } from "livekit-client";
@@ -54,7 +55,15 @@ import {
 import { ElementWidgetActions, widget } from "../../../widget.ts";
 import { getUrlParams } from "../../../UrlParams.ts";
 import { PosthogAnalytics } from "../../../analytics/PosthogAnalytics.ts";
-import { MatrixRTCMode } from "../../../settings/settings.ts";
+import {
+  advancedScreenShare,
+  screenShareResolution,
+  screenShareFramerate,
+  screenShareBitrate,
+  screenShareCodec,
+  parseResolution,
+} from "../../../settings/settings.ts";
+import { MatrixRTCMode } from "../../../config/ConfigOptions.ts";
 import { Config } from "../../../config/Config.ts";
 import {
   ConnectionState,
@@ -109,8 +118,6 @@ export type LocalMemberState =
     };
 
 /*
- * - get well known
- * - get oldest membership
  * - get transport to use
  * - get openId + jwt token
  * - wait for createTrack() call
@@ -171,7 +178,7 @@ export const createLocalMembership$ = ({
   logger: parentLogger,
   muteStates,
   matrixRTCSession,
-  roomId: roomId,
+  roomId,
 }: Props): {
   /**
    * This request to start audio and video tracks.
@@ -190,6 +197,11 @@ export const createLocalMembership$ = ({
    * Callback to toggle screen sharing. If null, screen sharing is not possible.
    */
   toggleScreenSharing: (() => void) | null;
+  /**
+   * The last error from toggling screen sharing, until dismissed.
+   */
+  screenShareError$: Behavior<Error | null>;
+  dismissScreenShareError: () => void;
   // tracks$: Behavior<LocalTrack[]>;
   participant$: Behavior<LocalParticipant | null>;
   connection$: Behavior<Connection | null>;
@@ -714,6 +726,7 @@ export const createLocalMembership$ = ({
     ),
   );
 
+  const screenShareError$ = new BehaviorSubject<Error | null>(null);
   let toggleScreenSharing: (() => void) | null = null;
   if (
     "getDisplayMedia" in (navigator.mediaDevices ?? {}) &&
@@ -734,6 +747,43 @@ export const createLocalMembership$ = ({
         surfaceSwitching: "include",
         systemAudio: "include",
       };
+
+      let publishOptions: TrackPublishOptions | undefined;
+
+      if (advancedScreenShare.getValue()) {
+        // User has advanced screen share settings enabled
+        const { width, height } = parseResolution(
+          screenShareResolution.getValue(),
+        );
+        const fps = screenShareFramerate.getValue();
+        const bps = screenShareBitrate.getValue();
+        const codec = screenShareCodec.getValue();
+
+        screenshareSettings.resolution = {
+          width,
+          height,
+          frameRate: fps,
+        };
+
+        publishOptions = {
+          screenShareEncoding: {
+            maxBitrate: bps,
+            maxFramerate: fps,
+          },
+          videoCodec: codec,
+        };
+      } else {
+        // Fall back to config.json settings if available
+        const screenConf = Config.get().media_quality?.screen_share;
+        if (screenConf?.max_resolution) {
+          screenshareSettings.resolution = {
+            width: Math.round((screenConf.max_resolution * 16) / 9),
+            height: screenConf.max_resolution,
+            frameRate: screenConf.max_framerate ?? 30,
+          };
+        }
+      }
+
       const targetScreenshareState = !sharingScreen$.value;
       logger.info(
         `toggleScreenSharing called. Switching ${
@@ -748,9 +798,18 @@ export const createLocalMembership$ = ({
       // We also allow screen sharing to be toggled even if the connection
       // is still initializing or publishing tracks, because there's no
       // technical reason to disallow this. LiveKit will publish if it can.
-      participant$.value
-        ?.setScreenShareEnabled(targetScreenshareState, screenshareSettings)
-        .catch(logger.error);
+      const participant = participant$.value;
+      if (!participant) return;
+      watchScreenShareToggle(
+        participant.setScreenShareEnabled(
+          targetScreenshareState,
+          screenshareSettings,
+          publishOptions,
+        ),
+        targetScreenshareState,
+        logger,
+        (e) => screenShareError$.next(e),
+      );
     };
   }
 
@@ -769,10 +828,43 @@ export const createLocalMembership$ = ({
     ),
     sharingScreen$,
     toggleScreenSharing,
+    screenShareError$,
+    dismissScreenShareError: () => screenShareError$.next(null),
     connection$: localConnection$,
     internalLoggerRef: logger,
   };
 };
+
+/**
+ * Logs the outcome of a screen share toggle and reports failures.
+ *
+ * getDisplayMedia may legitimately take a long time (the user is choosing
+ * what to share) or never settle at all, so nothing is inferred from silence:
+ * the request and its completion are logged with the elapsed time so that a
+ * hang is visible in the logs, and only an explicit rejection is reported.
+ *
+ * The user cancelling the picker rejects with a NotAllowedError; that is
+ * logged but not reported.
+ */
+export function watchScreenShareToggle(
+  toggle: Promise<unknown>,
+  enable: boolean,
+  logger: Logger,
+  onError: (e: Error) => void,
+): void {
+  const what = `Screen share ${enable ? "start" : "stop"}`;
+  const started = Date.now();
+  const elapsed = (): string => `${Date.now() - started} ms`;
+  logger.info(`${what} requested`);
+  toggle.then(
+    () => logger.info(`${what} completed in ${elapsed()}`),
+    (e: unknown) => {
+      logger.error(`${what} failed after ${elapsed()}:`, e);
+      if (e instanceof DOMException && e.name === "NotAllowedError") return;
+      onError(e instanceof Error ? e : new Error(String(e)));
+    },
+  );
+}
 
 export function observeSharingScreen$(p: Participant): Observable<boolean> {
   return observeParticipantEvents(
@@ -817,9 +909,7 @@ export function enterRTCSession(
   // have started tracking by the time calls start getting created.
   // groupCallOTelMembership?.onJoinCall();
 
-  const { features, matrix_rtc_session: matrixRtcSessionConfig } = Config.get();
-  const useDeviceSessionMemberEvents =
-    features?.feature_use_device_session_member_events;
+  const { matrix_rtc_session: matrixRtcSessionConfig } = Config.get();
   const { sendNotificationType: notificationType, callIntent } = getUrlParams();
   const multiSFU =
     matrixRTCMode === MatrixRTCMode.Compatibility ||
@@ -861,9 +951,6 @@ export function enterRTCSession(
       notificationType,
       callIntent,
       manageMediaKeys: encryptMedia,
-      ...(useDeviceSessionMemberEvents !== undefined && {
-        useLegacyMemberEvents: !useDeviceSessionMemberEvents,
-      }),
       delayedLeaveEventRestartMs:
         matrixRtcSessionConfig?.delayed_leave_event_restart_ms,
       delayedLeaveEventDelayMs:
@@ -874,6 +961,8 @@ export function enterRTCSession(
       makeKeyDelay: matrixRtcSessionConfig?.wait_for_key_rotation_ms,
       membershipEventExpiryMs:
         matrixRtcSessionConfig?.membership_event_expiry_ms,
+      keyRotationParticipantLimit:
+        matrixRtcSessionConfig?.key_rotation_participant_limit,
       unstableSendStickyEvents: matrixRTCMode === MatrixRTCMode.Matrix_2_0,
       maximumNetworkErrorRetryCount: maximumNetworkErrorRetryCount,
     },
