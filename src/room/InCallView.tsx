@@ -300,10 +300,21 @@ export const InCallView: FC<InCallViewProps> = ({
   // iOS Safari doesn't reliably fire `click` on plain <div>s, so we listen
   // for `pointerup` instead. Scrolls end in `pointercancel`, not `pointerup`,
   // so this still only fires for taps.
+  const touchGesture = useRef<{ startY: number; revealed: boolean } | null>(
+    null,
+  );
+  const onViewPointerDown = useCallback((e: ReactPointerEvent) => {
+    if (e.pointerType === "touch") {
+      touchGesture.current = { startY: e.clientY, revealed: false };
+    }
+  }, []);
   const onViewPointerUp = useCallback(
     (e: ReactPointerEvent) => {
+      const revealedBySwipe = touchGesture.current?.revealed ?? false;
+      touchGesture.current = null;
       if (
         e.pointerType === "touch" &&
+        !revealedBySwipe &&
         // If an interactive element was tapped, don't count this as a tap on the screen
         (e.target as Element).closest?.("button, input") === null
       )
@@ -314,11 +325,24 @@ export const InCallView: FC<InCallViewProps> = ({
 
   const onPointerMove = useCallback(
     (e: ReactPointerEvent) => {
-      if (e.pointerType === "mouse") vm.hoverScreen();
+      if (e.pointerType === "mouse") {
+        vm.hoverScreen();
+      } else if (
+        e.pointerType === "touch" &&
+        touchGesture.current !== null &&
+        e.clientY < touchGesture.current.startY
+      ) {
+        // 上滑而非轻点时唤出控制条，避免与移动端的轻点切换冲突。
+        touchGesture.current.revealed = true;
+        vm.hoverScreen();
+      }
     },
     [vm],
   );
-  const onPointerOut = useCallback(() => vm.unhoverScreen(), [vm]);
+  const onPointerLeave = useCallback(() => vm.unhoverScreen(), [vm]);
+  const onPointerCancel = useCallback(() => {
+    touchGesture.current = null;
+  }, []);
 
   const [settingsTab, setSettingsTab] = useState(defaultSettingsTab);
 
@@ -340,17 +364,9 @@ export const InCallView: FC<InCallViewProps> = ({
   const gridBounds = useMemo(
     () => ({
       width: bounds.width,
-      height:
-        bounds.height -
-        (edgeToEdge ? 0 : headerBounds.height + footerBounds.height),
+      height: bounds.height - (edgeToEdge ? 0 : headerBounds.height),
     }),
-    [
-      bounds.width,
-      bounds.height,
-      headerBounds.height,
-      footerBounds.height,
-      edgeToEdge,
-    ],
+    [bounds.width, bounds.height, headerBounds.height, edgeToEdge],
   );
   const gridBoundsObservable$ = useObservable(
     (inputs$) => inputs$.pipe(map(([gridBounds]) => gridBounds)),
@@ -639,9 +655,11 @@ export const InCallView: FC<InCallViewProps> = ({
         [styles.overflowing]: overflowing,
       })}
       ref={containerRef}
+      onPointerDown={onViewPointerDown}
       onPointerUp={onViewPointerUp}
       onPointerMove={onPointerMove}
-      onPointerOut={onPointerOut}
+      onPointerLeave={onPointerLeave}
+      onPointerCancel={onPointerCancel}
     >
       {header}
       {widget === null &&

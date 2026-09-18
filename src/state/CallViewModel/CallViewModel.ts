@@ -13,10 +13,7 @@ import {
   type Room as LivekitRoom,
   type RoomOptions,
 } from "livekit-client";
-import {
-  type MatrixClient,
-  type Room as MatrixRoom,
-} from "matrix-js-sdk";
+import { type MatrixClient, type Room as MatrixRoom } from "matrix-js-sdk";
 import {
   BehaviorSubject,
   catchError,
@@ -226,9 +223,8 @@ export const THROTTLE_SOUND_EFFECT_MS = 500;
 // on mobile. No spotlight tile should be shown below this threshold.
 const smallMobileCallThreshold = 3;
 
-// How long the footer should be shown for when hovering over or interacting
-// with the interface
-const showFooterMs = 4000;
+// 用户要求减少视频被遮挡的时间，工具栏从初始展示或最后一次交互起仅保持三秒可见。
+const showFooterMs = 3000;
 
 export type WindowMode = "normal" | "narrow" | "flat" | "pip";
 
@@ -1450,47 +1446,46 @@ export function createCallViewModel$(
   const screenUnhover$ = new Subject<void>();
 
   const naturallyShowFooter$ = scope.behavior<boolean>(
-    edgeToEdge$.pipe(
-      switchMap((edgeToEdge) => {
-        if (!edgeToEdge) return of(true);
-
-        // Sadly Firefox has some layering glitches that prevent the footer
-        // from appearing properly. They happen less often if we never hide
-        // the footer.
-        if (isFirefox()) return of(true);
-
-        // Layout is edge-to-edge; show/hide the footer in response to interactions
-        return windowMode$.pipe(
+    // Firefox 的图层渲染缺陷会使淡出后的工具栏无法可靠恢复，沿用既有例外。
+    isFirefox()
+      ? of(true)
+      : windowMode$.pipe(
           switchMap((mode) => {
             if (mode === "pip" && platform !== "desktop") {
               // No controls are shown in mobile pip as interactions are disabled
               return of(false);
             }
             const showInitially = mode !== "flat";
-            const timeout$ = mode === "flat" ? timer(showFooterMs) : NEVER;
+            const timeout$ = timer(showFooterMs);
 
             return merge(
+              of("initial" as const),
               screenTap$.pipe(map(() => "tap screen" as const)),
               controlsTap$.pipe(map(() => "tap controls" as const)),
               screenHover$.pipe(map(() => "hover" as const)),
             ).pipe(
               switchScan((state, interaction) => {
                 switch (interaction) {
-                  case "tap screen":
-                    return state
-                      ? // Toggle visibility on tap
-                        of(false)
-                      : // Hide after a timeout
-                        timeout$.pipe(
-                          map(() => false),
-                          startWith(true),
-                        );
+                  case "initial":
+                    // 保持小窗模式原有的初始收起状态。
+                    return timeout$.pipe(
+                      map(() => false),
+                      startWith(showInitially),
+                    );
                   case "tap controls":
-                    // The user is interacting with things, so reset the timeout
+                    // 每次工具栏操作后，都在空闲时收起。
                     return timeout$.pipe(
                       map(() => false),
                       startWith(true),
                     );
+                  case "tap screen":
+                    return state
+                      ? // Toggle visibility on tap
+                        of(false)
+                      : timeout$.pipe(
+                          map(() => false),
+                          startWith(true),
+                        );
                   case "hover":
                     // Show on hover and hide after a timeout
                     return race(timeout$, screenUnhover$.pipe(take(1))).pipe(
@@ -1499,12 +1494,9 @@ export function createCallViewModel$(
                     );
                 }
               }, showInitially),
-              startWith(showInitially),
             );
           }),
-        );
-      }),
-    ),
+        ),
   );
 
   const urlParams = getUrlParams();

@@ -110,7 +110,6 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
   args: {
-    showLogo: false,
     layout: "grid",
     setLayout: fn(),
     audioEnabled: true,
@@ -125,6 +124,7 @@ export const Default: Story = {
     videoBlurEnabled: true,
     hangup: fn(),
     terminateCall: fn(),
+    notifyControlInteraction: undefined,
     participantCount: 3,
     buttonSize: "lg",
     showFooter: true,
@@ -187,14 +187,6 @@ export const VideoBusy: Story = {
     videoBusy: true,
   },
 };
-export const WithLogo: Story = {
-  ...Default,
-  args: {
-    ...Default.args,
-    showLogo: true,
-  },
-};
-
 export const AudioVideoEnabled: Story = {
   ...Default,
   args: {
@@ -309,12 +301,11 @@ export const Pip: Story = {
     await expect(args.hangup).toHaveBeenCalled();
   },
 };
-export const NoControlsWithLogo: Story = {
+export const NoControls: Story = {
   ...Default,
   args: {
     ...Default.args,
     hideControls: true,
-    showLogo: true,
   },
 };
 
@@ -343,8 +334,6 @@ export const MobileLayout: Story = {
   ...Default,
   args: {
     ...Default.args,
-    showLogo: false,
-
     audioOutputSwitcher: { targetOutput: "speaker", switch: fn() },
   },
   globals: {
@@ -359,7 +348,6 @@ export const Lobby: Story = {
   ...Default,
   args: {
     ...Default.args,
-    showLogo: false,
     openSettings: undefined,
     layout: null,
     toggleScreenSharing: undefined,
@@ -373,8 +361,6 @@ export const LobbyMobile: Story = {
   ...Default,
   args: {
     ...Default.args,
-    showLogo: false,
-
     layout: null,
     toggleScreenSharing: undefined,
   },
@@ -391,7 +377,6 @@ export const LobbyRecentButton: Story = {
   args: {
     ...Default.args,
     children: <Link>Back To Recents</Link>,
-    showLogo: false,
     layout: null,
     toggleScreenSharing: undefined,
   },
@@ -405,7 +390,6 @@ export const LobbyRecentButtonMobile: Story = {
   args: {
     ...Default.args,
     children: <Link>Back To Recents</Link>,
-    showLogo: false,
     layout: null,
     toggleScreenSharing: undefined,
   },

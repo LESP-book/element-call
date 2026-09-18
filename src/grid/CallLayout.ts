@@ -96,7 +96,8 @@ export function arrangeTiles(
   }
 
   let tileWidth = (width - (columns + 1) * gap) / columns;
-  let tileHeight = (minHeight - (rows - 1) * gap) / rows;
+  // 与左右外缘一致，首尾行也各保留一格间距，避免视频框贴住视口底部。
+  let tileHeight = (minHeight - (rows + 1) * gap) / rows;
 
   // Impose a minimum and maximum aspect ratio on the tiles
   const tileAspectRatio = tileWidth / tileHeight;
