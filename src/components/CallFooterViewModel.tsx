@@ -20,7 +20,7 @@ import { type Behavior, constant } from "../state/Behavior";
 import type { ObservableScope } from "../state/ObservableScope";
 import { type MuteStates } from "../state/MuteStates";
 import { createStaticViewModel, type ViewModel } from "../state/ViewModel";
-import { getUrlParams, HeaderStyle } from "../UrlParams";
+import { HeaderStyle } from "../UrlParams";
 import { platform } from "../Platform";
 import { type FooterSnapshot } from "./CallFooter";
 
@@ -139,6 +139,8 @@ function buildDeviceBehaviors(
  * @param mediaDevices - Available and selected input devices.
  * @param reactionIdentifier - The local user's reaction identifier string, or
  *   undefined when reactions are not supported (hides the reaction button).
+ * @param options - `showControls`: whether the call controls should be shown.
+ *   `header`: the style of header, which decides whether to show the logo.
  */
 export function createCallFooterViewModel(
   scope: ObservableScope,
@@ -146,8 +148,9 @@ export function createCallFooterViewModel(
   muteStates: MuteStates,
   mediaDevices: MediaDevices,
   reactionIdentifier: string | undefined,
+  options: { showControls: boolean; header: HeaderStyle },
 ): ViewModel<FooterSnapshot> {
-  const { showControls, header: headerStyle } = getUrlParams();
+  const { showControls, header: headerStyle } = options;
 
   const isPip$ = scope.behavior(
     callModel.layout$.pipe(map((l) => l.type === "pip")),

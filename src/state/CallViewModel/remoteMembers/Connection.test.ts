@@ -394,6 +394,34 @@ describe("Start connection states", () => {
     expect(connectedState).toEqual(ConnectionState.LivekitConnected);
   });
 
+  it("stopping while connecting does not report an error", async () => {
+    setupTest();
+    const connection = setupRemoteConnection();
+
+    const capturedStates: (ConnectionState | Error)[] = [];
+    const s = connection.state$.subscribe((value) => {
+      capturedStates.push(value);
+    });
+    onTestFinished(() => s.unsubscribe());
+
+    // livekit-client rejects a pending connect() when disconnect() is called.
+    const pendingConnect = Promise.withResolvers<void>();
+    fakeLivekitRoom.connect.mockReturnValue(pendingConnect.promise);
+    fakeLivekitRoom.disconnect.mockResolvedValue(undefined);
+
+    const started = connection.start();
+    await vi.waitFor(() => expect(fakeLivekitRoom.connect).toHaveBeenCalled());
+    const stopping = connection.stop();
+    pendingConnect.reject(new Error("Client initiated disconnect"));
+    await stopping;
+
+    // start() resolves rather than rejecting (it is not awaited by the
+    // ConnectionManager, so a rejection would be unhandled).
+    await expect(started).resolves.toBeUndefined();
+    expect(capturedStates.at(-1)).toEqual(ConnectionState.Stopped);
+    expect(capturedStates.some((st) => st instanceof Error)).toBe(false);
+  });
+
   it("shutting down the scope should stop the connection", async () => {
     setupTest();
     vi.useFakeTimers();
@@ -516,11 +544,12 @@ describe("remote track logging", () => {
   it("logs remote participant and track events on the connection logger", () => {
     setupTest();
     const info = vi.fn();
+    const warn = vi.fn();
     const testLogger = {
       getChild: (): unknown => testLogger,
       info,
       debug: vi.fn(),
-      warn: vi.fn(),
+      warn,
       error: vi.fn(),
     } as unknown as Logger;
     new Connection(
@@ -545,6 +574,7 @@ describe("remote track logging", () => {
       source: "microphone",
       trackSid: "TR_mic",
       isMuted: false,
+      isEncrypted: true,
     } as unknown as RemoteTrackPublication;
     const messages = (): string[] => info.mock.calls.map((c) => c[0] as string);
 
@@ -564,10 +594,26 @@ describe("remote track logging", () => {
     );
     expect(messages()).toEqual([
       "Participant connected: @bob:example.org:DEV111 (PA_bob)",
-      "Subscribed: audio microphone TR_mic of @bob:example.org:DEV111 muted=false",
-      "Muted: audio microphone TR_mic of @bob:example.org:DEV111",
-      "Stream paused: audio microphone TR_mic of @bob:example.org:DEV111",
+      "Subscribed: audio microphone TR_mic of @bob:example.org:DEV111 encrypted=true muted=false",
+      "Muted: audio microphone TR_mic of @bob:example.org:DEV111 encrypted=true",
+      "Stream paused: audio microphone TR_mic of @bob:example.org:DEV111 encrypted=true",
     ]);
+
+    // Encryption status changes are logged; cryptor errors are warnings
+    fakeLivekitRoom.emit(
+      RoomEvent.ParticipantEncryptionStatusChanged,
+      false,
+      bob,
+    );
+    expect(messages().at(-1)).toBe(
+      "Encryption status of @bob:example.org:DEV111: encrypted=false",
+    );
+    const cryptorError = new Error("missing key at index 3");
+    fakeLivekitRoom.emit(RoomEvent.EncryptionError, cryptorError, bob);
+    expect(warn).toHaveBeenCalledWith(
+      "Encryption error for @bob:example.org:DEV111:",
+      cryptorError,
+    );
 
     // Local mute events are already logged by the Publisher
     fakeLivekitRoom.emit(RoomEvent.TrackMuted, pub, {
