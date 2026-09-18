@@ -14,7 +14,7 @@ import {
   type MockedFunction,
   vi,
 } from "vitest";
-import { render, type RenderResult } from "@testing-library/react";
+import { fireEvent, render, type RenderResult } from "@testing-library/react";
 import { type LocalParticipant } from "livekit-client";
 import { BehaviorSubject, of } from "rxjs";
 import { BrowserRouter } from "react-router-dom";
@@ -95,6 +95,19 @@ const matrixInfo = {
 } satisfies MatrixInfo;
 
 let useRoomEncryptionSystemMock: MockedFunction<typeof useRoomEncryptionSystem>;
+
+function pointerEvent(
+  type: string,
+  pointerType: "mouse" | "touch",
+  relatedTarget?: EventTarget,
+): Event {
+  const event = new Event(type, { bubbles: true });
+  Object.defineProperty(event, "pointerType", { value: pointerType });
+  if (relatedTarget !== undefined) {
+    Object.defineProperty(event, "relatedTarget", { value: relatedTarget });
+  }
+  return event;
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -230,6 +243,58 @@ describe("InCallView", () => {
 
       // Clicking the button should call select -> switchFn with the earpiece device id
       expect(switchFn).toHaveBeenCalledWith("earpiece-id");
+    });
+  });
+
+  describe("touch interactions", () => {
+    it("does not treat toolbar pointerup as a background tap", () => {
+      const { vm, getByTestId } = createInCallView();
+      const tapScreen = vi.spyOn(vm, "tapScreen");
+      const toolbar = getByTestId("footer-container").firstElementChild;
+
+      expect(toolbar).not.toBeNull();
+      fireEvent(toolbar!, pointerEvent("pointerup", "touch"));
+
+      expect(tapScreen).not.toHaveBeenCalled();
+    });
+
+    it("treats a touch on the call view background as a screen tap", () => {
+      const { vm, container } = createInCallView();
+      const tapScreen = vi.spyOn(vm, "tapScreen");
+      const inRoom = container.firstElementChild;
+
+      expect(inRoom).not.toBeNull();
+      fireEvent(inRoom!, pointerEvent("pointerup", "touch"));
+
+      expect(tapScreen).toHaveBeenCalledOnce();
+    });
+
+    it("does not unhover the screen for touch pointerleave", () => {
+      const { vm, container } = createInCallView();
+      const unhoverScreen = vi.spyOn(vm, "unhoverScreen");
+      const inRoom = container.firstElementChild;
+
+      expect(inRoom).not.toBeNull();
+      fireEvent(
+        inRoom!,
+        pointerEvent("pointerout", "touch", document.createElement("div")),
+      );
+
+      expect(unhoverScreen).not.toHaveBeenCalled();
+    });
+
+    it("unhovers the screen for mouse pointerleave", () => {
+      const { vm, container } = createInCallView();
+      const unhoverScreen = vi.spyOn(vm, "unhoverScreen");
+      const inRoom = container.firstElementChild;
+
+      expect(inRoom).not.toBeNull();
+      fireEvent(
+        inRoom!,
+        pointerEvent("pointerout", "mouse", document.createElement("div")),
+      );
+
+      expect(unhoverScreen).toHaveBeenCalledOnce();
     });
   });
 });

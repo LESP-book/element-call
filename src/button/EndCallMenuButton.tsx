@@ -33,8 +33,9 @@ const CONFIRMATION_TIMEOUT_MS = 3000;
 
 interface EndCallMenuButtonProps extends Omit<
   ComponentPropsWithoutRef<"button">,
-  "onClick"
+  "onClick" | "size"
 > {
+  size?: "md" | "lg";
   /**
    * Callback to leave the call (only for yourself).
    */
@@ -51,14 +52,16 @@ interface EndCallMenuButtonProps extends Omit<
 
 const EndCallMenuTriggerButton = forwardRef<
   HTMLButtonElement,
-  ComponentPropsWithoutRef<"button"> & {
+  Omit<ComponentPropsWithoutRef<"button">, "size"> & {
+    size?: "md" | "lg";
     tooltipLabel: string;
   }
->(({ tooltipLabel, className, disabled, ...props }, ref) => (
+>(({ tooltipLabel, size = "lg", className, disabled, ...props }, ref) => (
   <Tooltip label={tooltipLabel}>
     <CpdButton
       {...props}
       ref={ref}
+      size={size}
       className={classNames(className, styles.endCallButton)}
       iconOnly
       Icon={EndCallIcon}
@@ -80,6 +83,7 @@ export const EndCallMenuButton: FC<EndCallMenuButtonProps> = ({
   onLeave,
   onTerminate,
   participantCount,
+  size,
   className,
   disabled,
   ...props
@@ -150,6 +154,7 @@ export const EndCallMenuButton: FC<EndCallMenuButtonProps> = ({
       trigger={
         <EndCallMenuTriggerButton
           {...props}
+          size={size}
           className={className}
           disabled={disabled}
           tooltipLabel={tooltipLabel}
