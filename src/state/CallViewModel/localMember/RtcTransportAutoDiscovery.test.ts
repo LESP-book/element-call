@@ -6,6 +6,7 @@ Please see LICENSE in the repository root for full details.
 */
 
 import {
+  afterEach,
   beforeEach,
   describe,
   expect,
@@ -13,7 +14,7 @@ import {
   type MockedObject,
   vi,
 } from "vitest";
-import { MatrixError } from "matrix-js-sdk";
+import { ConnectionError, MatrixError } from "matrix-js-sdk";
 import { logger as rootLogger } from "matrix-js-sdk/lib/logger";
 import {
   type LivekitTransportConfig,
@@ -61,6 +62,54 @@ function makeResolvedConfig(livekitServiceUrl?: string): ResolvedConfigOptions {
 describe("RtcTransportAutoDiscovery", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each([configTransport.livekit_service_url, undefined])(
+    "宿主不支持 RTC 发现时立即使用配置，不重试（配置：%s）",
+    async (serviceUrl) => {
+      vi.useFakeTimers();
+      const client = makeClient();
+      client._unstable_getRTCTransports.mockRejectedValue(
+        new Error(
+          "The get_rtc_transports action is not supported by the client.",
+        ),
+      );
+      const discovery = new RtcTransportAutoDiscovery({
+        client,
+        resolvedConfig: makeResolvedConfig(serviceUrl),
+        logger: rootLogger,
+      });
+
+      const result = discovery.discoverPreferredTransport();
+      await vi.runAllTimersAsync();
+
+      await expect(result).resolves.toStrictEqual(
+        serviceUrl ? configTransport : null,
+      );
+      expect(client._unstable_getRTCTransports).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("临时连接故障仍然重试并优先使用后端地址", async () => {
+    vi.useFakeTimers();
+    const client = makeClient();
+    client._unstable_getRTCTransports
+      .mockRejectedValueOnce(new ConnectionError("连接暂时中断"))
+      .mockResolvedValue([backendTransport]);
+    const discovery = new RtcTransportAutoDiscovery({
+      client,
+      resolvedConfig: makeResolvedConfig(configTransport.livekit_service_url),
+      logger: rootLogger,
+    });
+
+    const result = discovery.discoverPreferredTransport();
+    await vi.runAllTimersAsync();
+
+    await expect(result).resolves.toStrictEqual(backendTransport);
+    expect(client._unstable_getRTCTransports).toHaveBeenCalledTimes(2);
   });
   const VALID_TEST_CASES: Array<{ transports: Transport[] }> = [
     { transports: [backendTransport] },

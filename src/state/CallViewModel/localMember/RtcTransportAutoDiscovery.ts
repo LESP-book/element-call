@@ -72,9 +72,26 @@ export class RtcTransportAutoDiscovery {
     // MSC4143: Attempt to fetch transports from backend.
     this.logger.info("First try to use getRTCTransports end point ...");
     try {
-      const transportList = await doNetworkOperationWithRetry(async () =>
-        client._unstable_getRTCTransports(),
-      );
+      const transportList = await doNetworkOperationWithRetry(async () => {
+        try {
+          return await client._unstable_getRTCTransports();
+        } catch (error) {
+          // Widget SDK 对不支持 MSC4515 的宿主只抛出普通 Error，没有专用错误类型。
+          // 重试无法增加宿主能力，应立即使用已有的配置地址选择流程，避免等待 30 秒。
+          if (
+            error instanceof Error &&
+            error.message ===
+              "The get_rtc_transports action is not supported by the client."
+          ) {
+            this.logger.info(
+              "Widget host does not support RTC transport discovery; checking app config",
+            );
+            return null;
+          }
+          throw error;
+        }
+      });
+      if (transportList === null) return null;
       const first = transportList.find(isLivekitTransportConfig);
       if (first) {
         return first;
