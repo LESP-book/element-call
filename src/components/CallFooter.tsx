@@ -8,8 +8,6 @@ Please see LICENSE in the repository root for full details.
 import { type FC, type JSX, type Ref, useMemo } from "react";
 import classNames from "classnames";
 
-import LogoMark from "../icons/LogoMark.svg?react";
-import LogoType from "../icons/LogoType.svg?react";
 import {
   EndCallButton,
   MicButton,
@@ -64,6 +62,8 @@ export interface FooterActions {
   /** Also controls if the hangup button is visible */
   hangup: (() => void) | undefined;
   terminateCall: (() => void) | undefined;
+  /** 通知通话视图用户仍在操作工具栏，用于重置自动收起计时。 */
+  notifyControlInteraction: (() => void) | undefined;
 }
 // we do not use any ? optional properties so that the vm type is including all fields.
 export interface FooterState {
@@ -82,7 +82,6 @@ export interface FooterState {
   showModals: boolean;
 
   buttonSize: "md" | "lg";
-  showLogo: boolean;
 
   /** Also controls if the layout switch is visible */
   layoutSwitchVm: LayoutSwitchViewModel | null;
@@ -141,6 +140,7 @@ export const CallFooter: FC<FooterProps> = ({
   const audioOutputSwitcher = useBehavior(vm.audioOutputSwitcher$);
   const hangup = useBehavior(vm.hangup$);
   const terminateCall = useBehavior(vm.terminateCall$);
+  const notifyControlInteraction = useBehavior(vm.notifyControlInteraction$);
   const participantCount = useBehavior(vm.participantCount$);
   const debugTileLayout = useBehavior(vm.debugTileLayout$);
   const videoOptions = useBehavior(vm.videoOptions$);
@@ -152,7 +152,6 @@ export const CallFooter: FC<FooterProps> = ({
   const toggleBlur = useBehavior(vm.toggleBlur$);
   const videoBlurEnabled = useBehavior(vm.videoBlurEnabled$);
   const buttonSize = useBehavior(vm.buttonSize$);
-  const showLogo = useBehavior(vm.showLogo$);
 
   const buttons: JSX.Element[] = [];
 
@@ -289,23 +288,11 @@ export const CallFooter: FC<FooterProps> = ({
       />,
     );
 
-  const logoDebugContainer = (
-    <div className={styles.logo}>
-      {showLogo && (
-        <>
-          <LogoMark width={24} height={24} aria-hidden />
-          <LogoType
-            width={80}
-            height={11}
-            aria-label={import.meta.env.VITE_PRODUCT_NAME || "Element Call"}
-          />
-        </>
-      )}
-      {debugTileLayout ? (
-        <TilesDebugInfo generation$={vm.tileStoreGeneration$} />
-      ) : undefined}
+  const debugContainer = debugTileLayout ? (
+    <div className={styles.debug}>
+      <TilesDebugInfo generation$={vm.tileStoreGeneration$} />
     </div>
-  );
+  ) : undefined;
 
   return (
     <div
@@ -316,23 +303,29 @@ export const CallFooter: FC<FooterProps> = ({
         [styles.hidden]: !showFooter,
       })}
     >
-      <div className={styles.settingsLogoContainer}>
-        {openSettings !== undefined && (
-          <SettingsIconButton
-            key="settings"
-            kind="secondary"
-            showForScreenWidth="wide"
-            onClick={openSettings}
-            data-testid="settings-bottom-left"
-          />
+      <div
+        className={styles.toolbar}
+        onPointerDown={notifyControlInteraction}
+        onFocusCapture={notifyControlInteraction}
+      >
+        <div className={styles.settingsLogoContainer}>
+          {openSettings !== undefined && (
+            <SettingsIconButton
+              key="settings"
+              kind="secondary"
+              showForScreenWidth="wide"
+              onClick={openSettings}
+              data-testid="settings-bottom-left"
+            />
+          )}
+          {children}
+          {debugContainer}
+        </div>
+        {!hideControls && <div className={styles.buttons}>{buttons}</div>}
+        {!hideControls && layoutSwitchVm && (
+          <LayoutSwitch vm={layoutSwitchVm} className={styles.layout} />
         )}
-        {children}
-        {(showLogo || debugTileLayout) && logoDebugContainer}
       </div>
-      {!hideControls && <div className={styles.buttons}>{buttons}</div>}
-      {!hideControls && layoutSwitchVm && (
-        <LayoutSwitch vm={layoutSwitchVm} className={styles.layout} />
-      )}
     </div>
   );
 };

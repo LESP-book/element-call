@@ -50,7 +50,7 @@ import {
   mockRtcMembership,
   testScope,
   exampleTransport,
-  MockRTCSession,
+  type MockRTCSession,
 } from "../../utils/test.ts";
 import { E2eeType } from "../../e2ee/e2eeType.ts";
 import {
@@ -487,7 +487,8 @@ describe.each(modes)("CallViewModel (%s mode)", (mode) => {
           schedule(tapScreenInputMarbles, { a: () => vm.tapScreen() });
 
           expectObservable(vm.edgeToEdge$).toBe("y", yesNo); // Edge-to-edge-layout
-          expectObservable(summarizeLayout$(vm.layout$)).toBe(
+          // 此测试只验证轻点前后的布局，不让自动收起的延时状态干扰断言。
+          expectObservable(summarizeLayout$(vm.layout$), "^ 6ms !").toBe(
             expectedLayoutMarbles,
             {
               a: {
@@ -527,7 +528,8 @@ describe.each(modes)("CallViewModel (%s mode)", (mode) => {
         },
         (vm) => {
           // Uses one-on-one mobile layout
-          expectObservable(summarizeLayout$(vm.layout$)).toBe("a", {
+          // 此测试只验证初始布局；自动收起由下方专门用例覆盖。
+          expectObservable(summarizeLayout$(vm.layout$), "^ 1ms !").toBe("a", {
             a: {
               type: "one-on-one-mobile",
               spotlight: [`${aliceId}:0`],
@@ -937,8 +939,8 @@ describe.each(modes)("CallViewModel (%s mode)", (mode) => {
     },
     {
       platform: "desktop",
-      expectedMarbles: "t",
-      description: "visible on desktop",
+      expectedMarbles: "t 3000ms f",
+      description: "auto-hides on desktop",
     },
   ];
 
@@ -971,6 +973,23 @@ describe.each(modes)("CallViewModel (%s mode)", (mode) => {
       });
     },
   );
+
+  test("footer auto-hides after three seconds without interaction", () => {
+    withTestScheduler(({ expectObservable }) => {
+      withCallViewModel(
+        {
+          remoteParticipants$: constant([aliceParticipant]),
+          rtcMembers$: constant([localRtcMember, aliceRtcMember]),
+        },
+        (vm) => {
+          expectObservable(vm.showFooter$).toBe("t 2999ms f", {
+            t: true,
+            f: false,
+          });
+        },
+      );
+    });
+  });
 
   // TODO add media to lk mocks
   test("onPipMediaOrientationUpdate is called with the spotlight media orientation", () => {

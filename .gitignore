@@ -45,3 +45,4 @@ all-close-plan.md
 storybook-static
 .omx/
 .playwright-mcp/
+./claude/worktree

@@ -148,7 +148,6 @@ export function createCallFooterViewModel(
   reactionIdentifier: string | undefined,
 ): ViewModel<FooterSnapshot> {
   const { showControls, header: headerStyle } = getUrlParams();
-  const showLogo = headerStyle === HeaderStyle.Standard;
 
   const isPip$ = scope.behavior(
     callModel.layout$.pipe(map((l) => l.type === "pip")),
@@ -163,7 +162,9 @@ export function createCallFooterViewModel(
     showFooter$: callModel.showFooter$,
     hideControls$: constant(!showControls),
     showModals$: callModel.showModals$,
-    asOverlay$: callModel.edgeToEdge$,
+    // 通话工具栏始终悬浮在媒体之上，避免为控制区长期预留垂直空间。
+    asOverlay$: constant(true),
+    notifyControlInteraction$: constant(callModel.tapControls),
     buttonSize$: scope.behavior(
       isPip$.pipe(map<boolean, "md" | "lg">((pip) => (pip ? "md" : "lg"))),
     ),
@@ -181,8 +182,6 @@ export function createCallFooterViewModel(
         ),
       ),
     ),
-
-    showLogo$: scope.behavior(isPip$.pipe(map((isPip) => showLogo && !isPip))),
 
     layoutSwitchVm$: callModel.layoutSwitchVm$,
 
@@ -228,7 +227,6 @@ export function createCallFooterViewModel(
  * @param mediaDevices - Available and selected input devices.
  * @param openSettings - Callback to open the settings modal, or undefined.
  * @param hangup - Callback to leave/cancel, or undefined (hides the button).
- * @param showLogo - Whether to show the Element Call logo.
  */
 export function createLobbyFooterViewModel(
   scope: ObservableScope,
@@ -236,7 +234,6 @@ export function createLobbyFooterViewModel(
   mediaDevices: MediaDevices,
   openSettings: (() => void) | undefined,
   hangup: (() => void) | undefined,
-  showLogo: boolean,
 ): ViewModel<FooterSnapshot> {
   return {
     ...createStaticViewModel({
@@ -244,7 +241,6 @@ export function createLobbyFooterViewModel(
       // The view model will then have less keys.
       // But as soon as we call `useViewModel` and convert back to a snapshot the missing props will
       // be correcty matching the snapshot type.
-      showLogo,
       hideControls: false,
       asOverlay: false,
       showModals: true,
@@ -255,6 +251,7 @@ export function createLobbyFooterViewModel(
       participantCount: 0,
       debugTileLayout: false,
       showFooter: true,
+      notifyControlInteraction: undefined,
       toggleAudio: undefined,
       toggleVideo: undefined,
       toggleScreenSharing: undefined,
