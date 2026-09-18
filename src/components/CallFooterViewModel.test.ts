@@ -95,6 +95,20 @@ const twoMicsAndOneCamMediaDevices = mockMediaDevices({
 });
 
 describe("createCallFooterViewModel", () => {
+  it("uses compact buttons on mobile platforms", () => {
+    platformMock.mockReturnValue("android");
+
+    const vm = createCallFooterViewModel(
+      testScope(),
+      buildMinimalCallViewModel(gridLayout),
+      mockMuteStates(),
+      mockMediaDevices({}),
+      /* reactionIdentifier */ undefined,
+    );
+
+    expect(vm.buttonSize$.value).toBe("md");
+  });
+
   describe("audioOptions and videoOptions", () => {
     function checkEmptyFor(platform: string, layout: Layout): void {
       platformMock.mockReturnValue(platform);

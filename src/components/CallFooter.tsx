@@ -5,7 +5,13 @@ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 Please see LICENSE in the repository root for full details.
 */
 
-import { type FC, type JSX, type Ref, useMemo } from "react";
+import {
+  type FC,
+  type JSX,
+  type PointerEvent as ReactPointerEvent,
+  type Ref,
+  useMemo,
+} from "react";
 import classNames from "classnames";
 
 import {
@@ -153,6 +159,12 @@ export const CallFooter: FC<FooterProps> = ({
   const videoBlurEnabled = useBehavior(vm.videoBlurEnabled$);
   const buttonSize = useBehavior(vm.buttonSize$);
 
+  const stopPointerUpPropagation = (e: ReactPointerEvent): void => {
+    // 工具栏中的点击不能被通话视图当作背景轻点处理。
+    notifyControlInteraction?.();
+    e.stopPropagation();
+  };
+
   const buttons: JSX.Element[] = [];
 
   if (openSettings !== undefined) {
@@ -162,6 +174,7 @@ export const CallFooter: FC<FooterProps> = ({
     buttons.push(
       <SettingsButton
         key="settings"
+        size={buttonSize}
         showForScreenWidth="narrow"
         onClick={openSettings}
         data-testid="settings-bottom-center"
@@ -272,6 +285,7 @@ export const CallFooter: FC<FooterProps> = ({
     buttons.push(
       <EndCallMenuButton
         key="end_call"
+        size={buttonSize}
         onLeave={hangup}
         onTerminate={terminateCall}
         participantCount={participantCount}
@@ -306,6 +320,7 @@ export const CallFooter: FC<FooterProps> = ({
       <div
         className={styles.toolbar}
         onPointerDown={notifyControlInteraction}
+        onPointerUp={stopPointerUpPropagation}
         onFocusCapture={notifyControlInteraction}
       >
         <div className={styles.settingsLogoContainer}>

@@ -37,6 +37,8 @@ Please see LICENSE in the repository root for full details.
   position: absolute;
   inset-inline: 0;
   inset-block-end: 0;
+  /* 将收起动画限制在工具栏区域内，避免它扩大通话页面滚动范围。 */
+  overflow: clip;
   pointer-events: none;
 }
 
@@ -79,19 +81,6 @@ Please see LICENSE in the repository root for full details.
   opacity: 0;
   pointer-events: none;
   transform: translateY(calc(100% + var(--cpd-space-6x)));
-}
-
-/* 保留细小的视觉提示，让触摸用户知道可从底部上滑唤出控制条。 */
-.footer.overlay.hidden::after {
-  position: absolute;
-  inset-block-end: calc(env(safe-area-inset-bottom) + var(--cpd-space-2x));
-  inset-inline-start: 50%;
-  inline-size: var(--cpd-space-12x);
-  block-size: var(--cpd-space-1x);
-  border-radius: var(--cpd-radius-pill-effect);
-  background: var(--cpd-color-icon-secondary-alpha);
-  transform: translateX(-50%);
-  content: "";
 }
 
 .footer.overlay:has(:focus-visible) {
@@ -151,6 +140,25 @@ Once we exceed 500 we hide everything except the buttons.
 @media (max-width: 500px) {
   .toolbar {
     grid-template-areas: "buttons buttons buttons";
+  }
+
+  .footer.overlay {
+    padding-left: calc(env(safe-area-inset-left) + var(--cpd-space-3x));
+    padding-right: calc(env(safe-area-inset-right) + var(--cpd-space-3x));
+  }
+
+  .footer.overlay .toolbar {
+    /* overlay 规则的优先级更高，需要在这里明确覆盖窄屏网格。 */
+    grid-template-columns: auto;
+    grid-template-areas: "buttons";
+    padding-inline: var(--cpd-space-2x);
+  }
+
+  .footer.overlay .buttons {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--cpd-space-2x);
+    min-inline-size: 0;
   }
 
   .settingsOnlyShowNarrow {

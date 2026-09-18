@@ -12,6 +12,11 @@ Please see LICENSE in the repository root for full details.
   height: 100%;
   width: 100%;
   overflow-x: hidden;
+  overflow-y: hidden;
+}
+
+/* 只有视频瓦片超过视口时才需要纵向滚动。 */
+.inRoom.overflowing {
   overflow-y: auto;
 }
 
