@@ -190,6 +190,7 @@ describe("Publisher", () => {
       muteStates,
       constant({ supported: false, processor: undefined }),
       logger,
+      false,
     );
   });
 
@@ -342,6 +343,7 @@ describe("Publisher", () => {
         muteStates,
         constant({ supported: false, processor: undefined }),
         logger,
+        false,
       );
     });
     afterEach(async () => {
@@ -385,6 +387,7 @@ describe("Bug fix", () => {
       muteStates,
       constant({ supported: false, processor: undefined }),
       logger,
+      false,
     );
     audioEnabled$.next(true);
 

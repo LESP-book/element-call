@@ -34,7 +34,6 @@ test("Can open menu and leave call", async () => {
   expect(onTerminate).not.toHaveBeenCalled();
   expect(queryByRole("menuitem", { name: "End for everyone" })).toBeNull();
 });
-
 test("Terminate requires confirmation and keeps menu open", async () => {
   const user = userEvent.setup();
   const onLeave = vi.fn();
@@ -58,4 +57,3 @@ test("Terminate requires confirmation and keeps menu open", async () => {
   await user.click(getByRole("menuitem", { name: "End call for 2 people?" }));
   expect(onTerminate).toHaveBeenCalledTimes(1);
 });
-

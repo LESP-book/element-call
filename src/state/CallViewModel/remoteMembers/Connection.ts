@@ -186,8 +186,11 @@ export class Connection {
   private logRemoteTrackEvents(): void {
     const room = this.livekitRoom;
     const log = this.logger.getChild("[RemoteTracks]");
+    // The encryption flag matters: if the publisher encrypts but this client
+    // believes the track is unencrypted, the cryptor is bypassed and raw
+    // ciphertext reaches the decoder (audible as loud noise bursts).
     const track = (pub: TrackPublication, p: Participant): string =>
-      `${pub.kind} ${pub.source} ${pub.trackSid} of ${p.identity}`;
+      `${pub.kind} ${pub.source} ${pub.trackSid} of ${p.identity} encrypted=${pub.isEncrypted}`;
 
     const onParticipantConnected = (p: RemoteParticipant): void =>
       log.info(`Participant connected: ${p.identity} (${p.sid})`);
@@ -232,6 +235,20 @@ export class Connection {
       state: Track.StreamState,
       p: RemoteParticipant,
     ): void => log.info(`Stream ${state}: ${track(pub, p)}`);
+    const onEncryptionStatusChanged = (
+      encrypted: boolean,
+      p?: Participant,
+    ): void =>
+      log.info(
+        `Encryption status of ${p?.identity ?? "unknown participant"}: encrypted=${encrypted}`,
+      );
+    // livekit-client throttles these per cryptor; they indicate frames being
+    // dropped (missing/invalid key).
+    const onEncryptionError = (error: Error, p?: Participant): void =>
+      log.warn(
+        `Encryption error for ${p?.identity ?? "unknown participant"}:`,
+        error,
+      );
 
     room
       .on(RoomEvent.ParticipantConnected, onParticipantConnected)
@@ -243,7 +260,12 @@ export class Connection {
       .on(RoomEvent.TrackSubscriptionFailed, onTrackSubscriptionFailed)
       .on(RoomEvent.TrackMuted, onTrackMuted)
       .on(RoomEvent.TrackUnmuted, onTrackUnmuted)
-      .on(RoomEvent.TrackStreamStateChanged, onTrackStreamStateChanged);
+      .on(RoomEvent.TrackStreamStateChanged, onTrackStreamStateChanged)
+      .on(
+        RoomEvent.ParticipantEncryptionStatusChanged,
+        onEncryptionStatusChanged,
+      )
+      .on(RoomEvent.EncryptionError, onEncryptionError);
     this.scope.onEnd(() => {
       room
         .off(RoomEvent.ParticipantConnected, onParticipantConnected)
@@ -255,7 +277,12 @@ export class Connection {
         .off(RoomEvent.TrackSubscriptionFailed, onTrackSubscriptionFailed)
         .off(RoomEvent.TrackMuted, onTrackMuted)
         .off(RoomEvent.TrackUnmuted, onTrackUnmuted)
-        .off(RoomEvent.TrackStreamStateChanged, onTrackStreamStateChanged);
+        .off(RoomEvent.TrackStreamStateChanged, onTrackStreamStateChanged)
+        .off(
+          RoomEvent.ParticipantEncryptionStatusChanged,
+          onEncryptionStatusChanged,
+        )
+        .off(RoomEvent.EncryptionError, onEncryptionError);
     });
   }
 
@@ -346,6 +373,15 @@ export class Connection {
       // If we were stopped while connecting, don't proceed to update state.
       if (this.stopped) return;
     } catch (error) {
+      if (this.stopped) {
+        // stop() was called while we were connecting, which makes the pending
+        // connect reject. That is the abort we asked for, not a failure, so
+        // don't record an error state on a stopped connection or rethrow it
+        // (start() is not awaited by the ConnectionManager, so a throw here
+        // becomes an unhandled promise rejection).
+        this.logger.debug(`Connect aborted because the connection was stopped`);
+        return;
+      }
       this.logger.debug(`Failed to connect to LiveKit room: ${error}`);
       this._state$.next(
         error instanceof ElementCallError
@@ -384,9 +420,11 @@ export class Connection {
       `stop: disconnecing from lk room ${this.transport.livekit_service_url}`,
     );
     if (this.stopped) return;
+    // Mark as stopped before disconnecting so that a connect() aborted by the
+    // disconnect sees the flag and does not report the abort as an error.
+    this.stopped = true;
     await this.livekitRoom.disconnect();
     this._state$.next(ConnectionState.Stopped);
-    this.stopped = true;
     this.logger.debug(
       `stop: DONE disconnecing from lk room ${this.transport.livekit_service_url}`,
     );
