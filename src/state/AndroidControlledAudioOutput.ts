@@ -96,6 +96,11 @@ export class AndroidControlledAudioOutput implements MediaDevice<
     this.selectDeviceCommand$.next(id);
   }
 
+  public reapplySelection(): void {
+    const selected = this.selected$.value;
+    if (selected !== undefined) this.notifyHostOfSelection(selected.id);
+  }
+
   /**
    * Creates an instance of AndroidControlledAudioOutput.
    *
@@ -109,7 +114,7 @@ export class AndroidControlledAudioOutput implements MediaDevice<
     private readonly controlledDevices$: Observable<OutputDevice[]>,
     private readonly scope: ObservableScope,
     private initialIntent: RTCCallIntent | undefined = undefined,
-    controls: Controls,
+    private readonly controls: Controls,
   ) {
     this.controllerState$ = this.startObservingState$();
 
@@ -135,15 +140,15 @@ export class AndroidControlledAudioOutput implements MediaDevice<
       .pipe(scope.bind())
       .subscribe((device) => {
         // Let the hosting application know which output device has been selected.
-        if (device !== undefined) {
-          this.logger.info("onAudioDeviceSelect called:", device);
-          controls.onAudioDeviceSelect?.(device.id);
-          // Also invoke the deprecated callback for backward compatibility
-          // TODO: it appears that on Android the hosting application is only using the deprecated callback (onOutputDeviceSelect)
-          // and not the new one (onAudioDeviceSelect), we should clean this up and only have one callback for audio device selection.
-          controls.onOutputDeviceSelect?.(device.id);
-        }
+        if (device !== undefined) this.notifyHostOfSelection(device.id);
       });
+  }
+
+  private notifyHostOfSelection(deviceId: string): void {
+    this.logger.info("onAudioDeviceSelect called:", deviceId);
+    this.controls.onAudioDeviceSelect?.(deviceId);
+    // Also invoke the deprecated callback for backward compatibility
+    this.controls.onOutputDeviceSelect?.(deviceId);
   }
 
   private startObservingState$(): Behavior<ControllerState> {

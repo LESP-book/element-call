@@ -74,6 +74,14 @@ export interface SelectedAudioOutputDevice extends SelectedDevice {
 }
 
 /**
+ * Capability used by a host-controlled audio session to restore its current route
+ * after the native audio session has been recreated.
+ */
+export interface AudioOutputSession {
+  reapplySelection(): void;
+}
+
+/**
  * Common reactive contract for selectable input/output media devices (mic, speaker, camera).
  *
  * `Label` is the type used to represent a device in UI lists.
@@ -388,23 +396,34 @@ export class MediaDevices {
     SelectedAudioInputDevice
   > = new AudioInput(this.usingNames$, this.scope);
 
-  public readonly audioOutput: MediaDevice<
-    AudioOutputDeviceLabel,
-    SelectedAudioOutputDevice
-  > = this.audioOutputOptions.controlledAudioDevices
-    ? platform == "android"
+  private readonly androidControlledAudioOutput:
+    | AndroidControlledAudioOutput
+    | undefined =
+    this.audioOutputOptions.controlledAudioDevices && platform === "android"
       ? new AndroidControlledAudioOutput(
           controlledAvailableOutputDevices$,
           this.scope,
           this.audioOutputOptions.callIntent,
           window.controls,
         )
-      : new IOSControlledAudioOutput(
+      : undefined;
+
+  public readonly audioOutput: MediaDevice<
+    AudioOutputDeviceLabel,
+    SelectedAudioOutputDevice
+  > =
+    this.androidControlledAudioOutput ??
+    (this.audioOutputOptions.controlledAudioDevices
+      ? new IOSControlledAudioOutput(
           this.usingNames$,
           this.scope,
           this.audioOutputOptions.callIntent,
         )
-    : new AudioOutput(this.usingNames$, this.scope);
+      : new AudioOutput(this.usingNames$, this.scope));
+
+  /** Native audio-session capability, available only for Android controlled output. */
+  public readonly audioOutputSession: AudioOutputSession | undefined =
+    this.androidControlledAudioOutput;
 
   public readonly videoInput: MediaDevice<DeviceLabel, SelectedDevice> =
     new VideoInput(this.usingNames$, this.scope);

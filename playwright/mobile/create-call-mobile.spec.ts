@@ -88,12 +88,40 @@ mobileTest(
     // TEST: control audio devices from the invitee page
 
     await guestPage.evaluate(() => {
+      const testWindow = window as typeof window & {
+        selectedAudioDevices: string[];
+      };
+      testWindow.selectedAudioDevices = [];
+      window.controls.onAudioDeviceSelect = (id): void => {
+        testWindow.selectedAudioDevices.push(id);
+      };
       window.controls.setAvailableAudioDevices([
         { id: "speaker", name: "Speaker", isSpeaker: true },
         { id: "earpiece", name: "Handset", isEarpiece: true },
         { id: "headphones", name: "Headphones" },
       ]);
     });
+
+    // 开麦会重建 Android 通信用音频会话，当前输出设备应重新通知宿主。
+    await guestPage.getByRole("button", { name: "Settings" }).click();
+    await guestPage.getByRole("radio", { name: "Headphones" }).click();
+    await guestPage.locator("#root").press("Escape");
+    const microphoneButton = guestPage.getByTestId("incall_mute");
+    await expect(microphoneButton).toHaveAttribute("aria-checked", "true");
+    await microphoneButton.click();
+    await expect(microphoneButton).toHaveAttribute("aria-checked", "false");
+    await microphoneButton.click();
+    await expect(microphoneButton).toHaveAttribute("aria-checked", "true");
+    await expect
+      .poll(async () =>
+        guestPage.evaluate(() => {
+          const testWindow = window as typeof window & {
+            selectedAudioDevices: string[];
+          };
+          return testWindow.selectedAudioDevices.at(-1);
+        }),
+      )
+      .toBe("headphones");
 
     // Open settings to select earpiece
     await guestPage.getByRole("button", { name: "Settings" }).click();

@@ -94,6 +94,7 @@ let audioEnabled$: BehaviorSubject<boolean>;
 let videoEnabled$: BehaviorSubject<boolean>;
 let trackPublications: LocalTrackPublication[];
 let createTrackLock: Promise<void>;
+const reapplyAudioOutputSelection = vi.fn();
 
 beforeEach(() => {
   trackPublications = [];
@@ -184,9 +185,14 @@ describe("Publisher", () => {
   let publisher: Publisher;
 
   beforeEach(() => {
+    reapplyAudioOutputSelection.mockReset();
     publisher = new Publisher(
       connection,
-      mockMediaDevices({}),
+      mockMediaDevices({
+        audioOutputSession: {
+          reapplySelection: reapplyAudioOutputSelection,
+        },
+      }),
       muteStates,
       constant({ supported: false, processor: undefined }),
       logger,
@@ -196,6 +202,12 @@ describe("Publisher", () => {
 
   afterEach(async () => {
     await publisher.destroy();
+  });
+
+  it("reapplies the native output route when the microphone is enabled", () => {
+    audioEnabled$.next(true);
+
+    expect(reapplyAudioOutputSelection).toHaveBeenCalledOnce();
   });
 
   it("Should not create tracks if started muted to avoid unneeded permission requests", async () => {

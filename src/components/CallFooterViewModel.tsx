@@ -169,11 +169,7 @@ export function createCallFooterViewModel(
     asOverlay$: constant(true),
     notifyControlInteraction$: constant(callModel.tapControls),
     buttonSize$: scope.behavior(
-      isPip$.pipe(
-        map<boolean, "md" | "lg">((pip) =>
-          pip || platform !== "desktop" ? "md" : "lg",
-        ),
-      ),
+      isPip$.pipe(map<boolean, "md" | "lg">((pip) => (pip ? "md" : "lg"))),
     ),
 
     openSettings$: scope.behavior(
