@@ -34,9 +34,9 @@ import userEvent, {
   PointerEventsCheckLevel,
 } from "@testing-library/user-event";
 import { type RelationsContainer } from "matrix-js-sdk/lib/models/relations-container";
-import { useState } from "react";
+import { type JSX, useState } from "react";
 import { TooltipProvider } from "@vector-im/compound-web";
-import { Subject } from "rxjs";
+import { NEVER, Subject } from "rxjs";
 import { Room as LivekitRoom } from "livekit-client";
 
 import { prefetchSounds } from "../soundUtils";
@@ -64,10 +64,24 @@ import { MatrixRTCTransportMissingError } from "../utils/errors";
 import { ProcessorProvider } from "../livekit/TrackProcessorContext";
 import { MediaDevicesContext } from "../MediaDevicesContext";
 import { constant } from "../state/Behavior";
+import { type MediaDevices } from "../state/MediaDevices";
 
 vi.mock("../soundUtils");
 vi.mock("../useAudioContext");
 vi.mock("./InCallView");
+const previewTracks = vi.hoisted(() => ({
+  value: [] as unknown[] | undefined,
+  onError: undefined as ((error: Error) => void) | undefined,
+}));
+vi.mock("@livekit/components-react", () => ({
+  usePreviewTracks: (
+    _options: unknown,
+    onError?: (error: Error) => void,
+  ): unknown[] | undefined => {
+    previewTracks.onError = onError;
+    return previewTracks.value;
+  },
+}));
 vi.mock("react-use-measure", () => ({
   default: (): [() => void, object] => [(): void => {}, {}],
 }));
@@ -114,6 +128,8 @@ const roomId = "!foo:bar";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  previewTracks.value = [];
+  previewTracks.onError = undefined;
   activeCallInstanceSeed = 0;
   (prefetchSounds as MockedFunction<typeof prefetchSounds>).mockResolvedValue({
     sound: new ArrayBuffer(0),
@@ -149,10 +165,11 @@ function createCallView(
     withErrorBoundary?: boolean;
     /** Wait for the host to say when to join, rather than joining at once. */
     preload?: boolean;
+    mediaDevices?: MediaDevices;
   } = {},
-): {
+): ReturnType<typeof render> & {
   rtcSession: MatrixRTCSession;
-  getByText: ReturnType<typeof render>["getByText"];
+  refresh: () => void;
 } {
   const client = {
     getUser: () => null,
@@ -181,7 +198,7 @@ function createCallView(
     constant([localRtcMember]),
   );
   rtcSession.joined = joined;
-  const callView = (
+  const callView = (): JSX.Element => (
     <CallView
       client={client}
       isPasswordlessUser={false}
@@ -192,30 +209,103 @@ function createCallView(
       rtcSession={rtcSession.asMockedSession()}
     />
   );
-  const { getByText } = render(
+  const renderCallView = (): JSX.Element => (
     <BrowserRouter>
       <HostBridgeProvider value={hostBridge}>
         <TooltipProvider>
-          <MediaDevicesContext value={mockMediaDevices({})}>
+          <MediaDevicesContext
+            value={options.mediaDevices ?? mockMediaDevices({})}
+          >
             <ProcessorProvider>
               {options.withErrorBoundary ? (
                 <GroupCallErrorBoundary recoveryActionHandler={vi.fn()}>
-                  {callView}
+                  {callView()}
                 </GroupCallErrorBoundary>
               ) : (
-                callView
+                callView()
               )}
             </ProcessorProvider>
           </MediaDevicesContext>
         </TooltipProvider>
       </HostBridgeProvider>
-    </BrowserRouter>,
+    </BrowserRouter>
   );
+  const result = render(renderCallView());
   return {
-    getByText,
+    ...result,
     rtcSession: rtcSession.asMockedSession(),
+    refresh: () => result.rerender(renderCallView()),
   };
 }
+
+test("waits for media permission before entering a call without a lobby", async () => {
+  previewTracks.value = undefined;
+  const hostBridge: HostBridge = {
+    ...nullHostBridge,
+    allowJoinUnmutedViaIntent: true,
+  };
+  const mediaDevices = mockMediaDevices({
+    audioInput: {
+      available$: constant(
+        new Map([
+          ["microphone", { type: "name" as const, name: "Microphone" }],
+        ]),
+      ),
+      selected$: constant({
+        id: "microphone",
+        hardwareDeviceChange$: NEVER,
+      }),
+      select: vi.fn(),
+    },
+  });
+
+  const { refresh } = createCallView(hostBridge, false, { mediaDevices });
+  await flushPromises();
+  expect(screen.queryByText("Leave")).toBeNull();
+
+  previewTracks.value = [];
+  refresh();
+
+  await waitFor(() => expect(screen.getByText("Leave")).toBeInTheDocument());
+});
+
+test("enters a direct call muted after media permission is rejected", async () => {
+  previewTracks.value = undefined;
+  const hostBridge: HostBridge = {
+    ...nullHostBridge,
+    allowJoinUnmutedViaIntent: true,
+  };
+  const mediaDevices = mockMediaDevices({
+    audioInput: {
+      available$: constant(
+        new Map([
+          ["microphone", { type: "name" as const, name: "Microphone" }],
+        ]),
+      ),
+      selected$: constant({
+        id: "microphone",
+        hardwareDeviceChange$: NEVER,
+      }),
+      select: vi.fn(),
+    },
+  });
+
+  createCallView(hostBridge, false, { mediaDevices });
+  await flushPromises();
+  expect(screen.queryByText("Leave")).toBeNull();
+
+  act(() => previewTracks.onError?.(new Error("Permission denied")));
+
+  await waitFor(() => expect(screen.getByText("Leave")).toBeInTheDocument());
+});
+
+test("does not request media before entering a fully muted direct call", async () => {
+  previewTracks.value = undefined;
+
+  createCallView(nullHostBridge, false);
+
+  await waitFor(() => expect(screen.getByText("Leave")).toBeInTheDocument());
+});
 
 test.skip("CallView plays a leave sound asynchronously in SPA mode", async () => {
   const user = userEvent.setup();
