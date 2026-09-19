@@ -14,8 +14,10 @@ import {
   Track,
 } from "livekit-client";
 import {
+  filter,
   map,
   NEVER,
+  pairwise,
   type Observable,
   type Subscription,
   switchMap,
@@ -23,7 +25,11 @@ import {
 import { type Logger } from "matrix-js-sdk/lib/logger";
 
 import type { Behavior } from "../../Behavior.ts";
-import type { MediaDevices, SelectedDevice } from "../../MediaDevices.ts";
+import type {
+  AudioOutputSession,
+  MediaDevices,
+  SelectedDevice,
+} from "../../MediaDevices.ts";
 import type { MuteStates } from "../../MuteStates.ts";
 import {
   type ProcessorState,
@@ -77,6 +83,7 @@ export class Publisher {
     this.observeTrackProcessors(this.scope, room, trackerProcessorState$);
     // Observe media device changes and update LiveKit active devices accordingly
     this.observeMediaDevices(this.scope, devices, controlledAudioDevices);
+    this.observeAudioOutputSession(devices.audioOutputSession);
 
     this.workaroundRestartAudioInputTrackChrome(devices, this.scope);
 
@@ -343,6 +350,21 @@ export class Publisher {
             });
         }
       });
+  }
+
+  // Reapply the native output route after enabling the microphone recreates the audio session.
+  private observeAudioOutputSession(
+    audioOutputSession: AudioOutputSession | undefined,
+  ): void {
+    if (audioOutputSession === undefined) return;
+
+    this.muteStates.audio.enabled$
+      .pipe(
+        pairwise(),
+        filter(([wasEnabled, enabled]) => !wasEnabled && enabled),
+        this.scope.bind(),
+      )
+      .subscribe(() => audioOutputSession.reapplySelection());
   }
 
   // Observe changes in the selected media devices and update the LiveKit room accordingly.

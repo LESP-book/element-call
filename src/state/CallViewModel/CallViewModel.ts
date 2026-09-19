@@ -67,7 +67,7 @@ import {
   MatrixRTCMode,
   type ResolvedDelayedLeaveTimings,
 } from "../../config/ConfigOptions";
-import { isFirefox, platform } from "../../Platform";
+import { platform } from "../../Platform";
 import { setPipEnabled$ } from "../../controls";
 import { TileStore } from "../TileStore";
 import { gridLikeLayout } from "../GridLikeLayout";
@@ -1508,57 +1508,54 @@ export function createCallViewModel$(
   const screenUnhover$ = new Subject<void>();
 
   const naturallyShowFooter$ = scope.behavior<boolean>(
-    // Firefox 的图层渲染缺陷会使淡出后的工具栏无法可靠恢复，沿用既有例外。
-    isFirefox()
-      ? of(true)
-      : windowMode$.pipe(
-          switchMap((mode) => {
-            if (mode === "pip" && platform !== "desktop") {
-              // No controls are shown in mobile pip as interactions are disabled
-              return of(false);
-            }
-            const showInitially = mode !== "flat";
-            const timeout$ = timer(showFooterMs);
+    windowMode$.pipe(
+      switchMap((mode) => {
+        if (mode === "pip" && platform !== "desktop") {
+          // No controls are shown in mobile pip as interactions are disabled
+          return of(false);
+        }
+        const showInitially = mode !== "flat";
+        const timeout$ = timer(showFooterMs);
 
-            return merge(
-              of("initial" as const),
-              screenTap$.pipe(map(() => "tap screen" as const)),
-              controlsTap$.pipe(map(() => "tap controls" as const)),
-              screenHover$.pipe(map(() => "hover" as const)),
-            ).pipe(
-              switchScan((state, interaction) => {
-                switch (interaction) {
-                  case "initial":
-                    // 保持小窗模式原有的初始收起状态。
-                    return timeout$.pipe(
-                      map(() => false),
-                      startWith(showInitially),
-                    );
-                  case "tap controls":
-                    // 每次工具栏操作后，都在空闲时收起。
-                    return timeout$.pipe(
-                      map(() => false),
-                      startWith(true),
-                    );
-                  case "tap screen":
-                    return state
-                      ? // Toggle visibility on tap
-                        of(false)
-                      : timeout$.pipe(
-                          map(() => false),
-                          startWith(true),
-                        );
-                  case "hover":
-                    // Show on hover and hide after a timeout
-                    return race(timeout$, screenUnhover$.pipe(take(1))).pipe(
+        return merge(
+          of("initial" as const),
+          screenTap$.pipe(map(() => "tap screen" as const)),
+          controlsTap$.pipe(map(() => "tap controls" as const)),
+          screenHover$.pipe(map(() => "hover" as const)),
+        ).pipe(
+          switchScan((state, interaction) => {
+            switch (interaction) {
+              case "initial":
+                // 保持小窗模式原有的初始收起状态。
+                return timeout$.pipe(
+                  map(() => false),
+                  startWith(showInitially),
+                );
+              case "tap controls":
+                // 每次工具栏操作后，都在空闲时收起。
+                return timeout$.pipe(
+                  map(() => false),
+                  startWith(true),
+                );
+              case "tap screen":
+                return state
+                  ? // Toggle visibility on tap
+                    of(false)
+                  : timeout$.pipe(
                       map(() => false),
                       startWith(true),
                     );
-                }
-              }, showInitially),
-            );
-          }),
-        ),
+              case "hover":
+                // Show on hover and hide after a timeout
+                return race(timeout$, screenUnhover$.pipe(take(1))).pipe(
+                  map(() => false),
+                  startWith(true),
+                );
+            }
+          }, showInitially),
+        );
+      }),
+    ),
   );
 
   const showFooterUrlParams = !(

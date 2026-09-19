@@ -96,12 +96,27 @@ const twoMicsAndOneCamMediaDevices = mockMediaDevices({
 });
 
 describe("createCallFooterViewModel", () => {
-  it("uses compact buttons on mobile platforms", () => {
+  it("uses full-size buttons on mobile platforms outside PiP", () => {
     platformMock.mockReturnValue("android");
 
     const vm = createCallFooterViewModel(
       testScope(),
       buildMinimalCallViewModel(gridLayout),
+      mockMuteStates(),
+      mockMediaDevices({}),
+      /* reactionIdentifier */ undefined,
+      { showControls: true, header: HeaderStyle.Standard },
+    );
+
+    expect(vm.buttonSize$.value).toBe("lg");
+  });
+
+  it("keeps compact buttons in PiP", () => {
+    platformMock.mockReturnValue("android");
+
+    const vm = createCallFooterViewModel(
+      testScope(),
+      buildMinimalCallViewModel(pipLayout),
       mockMuteStates(),
       mockMediaDevices({}),
       /* reactionIdentifier */ undefined,

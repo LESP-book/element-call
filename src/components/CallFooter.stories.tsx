@@ -47,11 +47,13 @@ function CallFooterStoryWrapper({
   children,
   layout,
   setLayout,
+  theme,
   ...vmSnapshot
 }: Omit<FooterSnapshot, "layoutSwitchVm"> & {
   children?: false | JSX.Element | JSX.Element[] | undefined;
   layout: LayoutMode | null;
   setLayout: (value: LayoutMode) => void;
+  theme: "light" | "dark";
 }): ReactNode {
   const vm = useStaticViewModel({
     ...vmSnapshot,
@@ -59,7 +61,7 @@ function CallFooterStoryWrapper({
   });
   return (
     <MediaDevicesContext value={mediaDevices}>
-      <div className={inCallViewStyles.inRoom}>
+      <div className={`${inCallViewStyles.inRoom} cpd-theme-${theme}`}>
         <ReactionsSenderContext
           value={{
             supportsReactions: false,
@@ -104,6 +106,10 @@ const meta = {
     toggleVideo: fnArgType,
     hangup: fnArgType,
     terminateCall: fnArgType,
+    theme: {
+      control: "radio",
+      options: ["light", "dark"],
+    },
   },
 } satisfies Meta<typeof CallFooterStoryWrapper>;
 
@@ -128,6 +134,7 @@ export const Default: Story = {
     terminateCall: fn(),
     notifyControlInteraction: undefined,
     participantCount: 3,
+    theme: "dark",
     buttonSize: "lg",
     showFooter: true,
     hideControls: false,
@@ -343,6 +350,43 @@ export const MobileLayout: Story = {
   },
   parameters: {
     ...Default.parameters,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const footer = canvas.getByTestId("footer-container");
+    const toolbar = footer.firstElementChild;
+
+    await expect(toolbar).not.toBeNull();
+    await expect(toolbar!.getBoundingClientRect().width).toBeLessThanOrEqual(
+      footer.getBoundingClientRect().width,
+    );
+    for (const button of within(toolbar as HTMLElement).getAllByRole(
+      "button",
+    )) {
+      if (button.hasAttribute("data-size"))
+        await expect(button).toHaveAttribute("data-size", "lg");
+    }
+  },
+};
+
+export const LightThemeOverlay: Story = {
+  ...Default,
+  args: {
+    ...Default.args,
+    asOverlay: true,
+    theme: "light",
+  },
+  play: async ({ canvasElement }) => {
+    const toolbar = within(canvasElement).getByTestId("footer-container")
+      .firstElementChild as HTMLElement;
+    const toolbarBackground = getComputedStyle(toolbar).getPropertyValue(
+      "--call-footer-toolbar-background",
+    );
+    const canvasBackground = getComputedStyle(toolbar)
+      .getPropertyValue("--cpd-color-bg-canvas-default")
+      .trim();
+
+    await expect(toolbarBackground).toContain(canvasBackground);
   },
 };
 

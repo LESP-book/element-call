@@ -253,6 +253,26 @@ describe("Test mappings", () => {
 });
 
 describe("Test select a device", () => {
+  it("reapplies the current device to the host", () => {
+    const controlledAudioOutput = new AndroidControlledAudioOutput(
+      of(BT_HEADSET_BASE_DEVICE_LIST),
+      testScope,
+      "video",
+      mockControls,
+    );
+
+    controlledAudioOutput.reapplySelection();
+
+    expect(mockControls.onAudioDeviceSelect).toHaveBeenCalledTimes(2);
+    expect(mockControls.onAudioDeviceSelect).toHaveBeenLastCalledWith(
+      BT_HEADSET_DEVICE.id,
+    );
+    expect(mockControls.onOutputDeviceSelect).toHaveBeenCalledTimes(2);
+    expect(mockControls.onOutputDeviceSelect).toHaveBeenLastCalledWith(
+      BT_HEADSET_DEVICE.id,
+    );
+  });
+
   it(`Switch to correct device`, () => {
     withTestScheduler(({ cold, schedule, expectObservable, flush }) => {
       const controlledAudioOutput = new AndroidControlledAudioOutput(
