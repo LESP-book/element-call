@@ -165,7 +165,7 @@ export function createCallFooterViewModel(
     showFooter$: callModel.showFooter$,
     hideControls$: constant(!showControls),
     showModals$: callModel.showModals$,
-    // 通话工具栏始终悬浮在媒体之上，避免为控制区长期预留垂直空间。
+    // 显示时由 sticky footer 为本地 PiP 留出空间，收起时 CSS 会脱离布局。
     asOverlay$: constant(true),
     notifyControlInteraction$: constant(callModel.tapControls),
     buttonSize$: scope.behavior(

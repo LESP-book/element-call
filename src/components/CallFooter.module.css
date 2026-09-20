@@ -33,10 +33,7 @@ Please see LICENSE in the repository root for full details.
 }
 
 .footer.overlay {
-  /* 悬浮控制条不参与网格高度计算，收起后可完整让出视频区域。 */
-  position: absolute;
-  inset-inline: 0;
-  inset-block-end: 0;
+  /* 显示时保持 sticky，让本地 PiP 为工具栏腾出空间。 */
   /* 将收起动画限制在工具栏区域内，避免它扩大通话页面滚动范围。 */
   overflow: clip;
   pointer-events: none;
@@ -92,6 +89,10 @@ Please see LICENSE in the repository root for full details.
 
 .footer.overlay.hidden {
   display: flex;
+  /* 收起后才脱离布局，让视频区域恢复完整高度。 */
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline: 0;
 }
 
 .footer.overlay.hidden .toolbar {
