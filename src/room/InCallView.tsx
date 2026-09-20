@@ -378,9 +378,17 @@ export const InCallView: FC<InCallViewProps> = ({
   const gridBounds = useMemo(
     () => ({
       width: bounds.width,
-      height: bounds.height - (edgeToEdge ? 0 : headerBounds.height),
+      height:
+        bounds.height -
+        (edgeToEdge ? 0 : headerBounds.height + footerBounds.height),
     }),
-    [bounds.width, bounds.height, headerBounds.height, edgeToEdge],
+    [
+      bounds.width,
+      bounds.height,
+      headerBounds.height,
+      footerBounds.height,
+      edgeToEdge,
+    ],
   );
   const gridBoundsObservable$ = useObservable(
     (inputs$) => inputs$.pipe(map(([gridBounds]) => gridBounds)),
