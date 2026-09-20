@@ -18,13 +18,7 @@ import { type MatrixClient } from "matrix-js-sdk";
 import { Button } from "@vector-im/compound-web";
 import classNames from "classnames";
 import { logger } from "matrix-js-sdk/lib/logger";
-import { usePreviewTracks } from "@livekit/components-react";
-import {
-  type CreateLocalTracksOptions,
-  type LocalVideoTrack,
-  Track,
-} from "livekit-client";
-import { useObservableEagerState } from "observable-hooks";
+import { type LocalVideoTrack, Track } from "livekit-client";
 
 import inCallStyles from "./InCallView.module.css";
 import styles from "./LobbyView.module.css";
@@ -39,18 +33,13 @@ import { LeaveToHomeLink } from "../button/LeaveToHomeLink";
 import { useLeaveToHome } from "../LeaveToHomeContext";
 import { useMediaDevices } from "../MediaDevicesContext";
 import { ObservableScope } from "../state/ObservableScope";
-import { useInitial } from "../useInitial";
-import {
-  useTrackProcessor,
-  useTrackProcessorSync,
-} from "../livekit/TrackProcessorContext";
-import { getValue } from "../utils/observable";
 import { useBehavior } from "../useBehavior";
 import { CallFooter, type FooterSnapshot } from "../components/CallFooter";
 import { useCallViewKeyboardShortcuts } from "../useCallViewKeyboardShortcuts";
 import { createLobbyFooterViewModel } from "../components/CallFooterViewModel";
 import { type ViewModel } from "../state/ViewModel";
 import { useAppBarPrimaryButtonIconKind } from "../AppBar";
+import { usePrejoinMedia } from "./usePrejoinMedia";
 
 interface Props {
   client: MatrixClient;
@@ -87,7 +76,6 @@ export const LobbyView: FC<Props> = ({
   const { t } = useTranslation();
 
   useAppBarPrimaryButtonIconKind("back");
-  const audioEnabled = useBehavior(muteStates.audio.enabled$);
   const videoEnabled = useBehavior(muteStates.video.enabled$);
   const toggleAudio = useBehavior(muteStates.audio.toggle$);
   const toggleVideo = useBehavior(muteStates.video.toggle$);
@@ -125,50 +113,7 @@ export const LobbyView: FC<Props> = ({
   );
 
   const devices = useMediaDevices();
-  const videoInputId = useObservableEagerState(
-    devices.videoInput.selected$,
-  )?.id;
-
-  // Capture the audio options as they were when we first mounted, because
-  // we're not doing anything with the audio anyway so we don't need to
-  // re-open the devices when they change (see below).
-  const initialAudioOptions = useInitial(
-    () =>
-      audioEnabled && {
-        deviceId: getValue(devices.audioInput.selected$)?.id,
-      },
-  );
-
-  const { processor } = useTrackProcessor();
-
-  const initialProcessor = useInitial(() => processor);
-  const localTrackOptions = useMemo<CreateLocalTracksOptions>(
-    () => ({
-      // The only reason we request audio here is to get the audio permission
-      // request over with at the same time. But changing the audio settings
-      // shouldn't cause this hook to recreate the track, which is why we
-      // reference the initial values here.
-      // We also pass in a clone because livekit mutates the object passed in,
-      // which would cause the devices to be re-opened on the next render.
-      audio: Object.assign({}, initialAudioOptions),
-      video: videoEnabled && {
-        deviceId: videoInputId,
-        processor: initialProcessor,
-      },
-    }),
-    [initialAudioOptions, videoEnabled, videoInputId, initialProcessor],
-  );
-
-  const onError = useCallback(
-    (error: Error) => {
-      logger.error("Error while creating preview Tracks:", error);
-      muteStates.audio.setEnabled$.value?.(false);
-      muteStates.video.setEnabled$.value?.(false);
-    },
-    [muteStates],
-  );
-
-  const tracks = usePreviewTracks(localTrackOptions, onError);
+  const { tracks } = usePrejoinMedia(muteStates);
 
   const videoTrack = useMemo(
     () =>
@@ -176,17 +121,6 @@ export const LobbyView: FC<Props> = ({
         null) as LocalVideoTrack | null,
     [tracks],
   );
-
-  useEffect(() => {
-    if (videoTrack && videoInputId === undefined) {
-      // If we have a video track but no videoInputId,
-      // we have to update the available devices. So that we select the first
-      // available video input device as the default instead of the `""` id.
-      devices.requestDeviceNames();
-    }
-  }, [devices, videoInputId, videoTrack]);
-
-  useTrackProcessorSync(videoTrack);
 
   const [footerVm, setFooterVm] = useState<ViewModel<FooterSnapshot> | null>(
     null,

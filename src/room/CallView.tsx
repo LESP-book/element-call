@@ -73,6 +73,7 @@ import { useRootElement } from "../RootElementContext.ts";
 import { useHostBridge } from "../HostBridge.ts";
 import { useMuteStates } from "../state/useMuteStates.ts";
 import { useLeaveToHome } from "../LeaveToHomeContext.ts";
+import { usePrejoinMedia } from "./usePrejoinMedia.ts";
 
 /**
  * If there already are this many participants in the call, we automatically mute
@@ -386,9 +387,6 @@ const LoadedCallView: FC<LoadedProps> = ({
           });
         });
         return (): void => subscription.unsubscribe();
-      } else {
-        // No lobby and no preload: we enter the rtc session right away
-        setJoined(true);
       }
     }
   }, [
@@ -608,9 +606,16 @@ const LoadedCallView: FC<LoadedProps> = ({
   } else if (left && hostControlsLifetime) {
     // Left, and the host decides what happens next:
     body = returnToLobby ? lobbyView : null;
-  } else if (preload || skipLobby) {
+  } else if (preload) {
     // The RTC session is not joined to yet (`isJoined`), but enterRTCSessionOrError should have been called.
     body = null;
+  } else if (skipLobby) {
+    body = (
+      <SkipLobbyMediaPreflight
+        muteStates={muteStates}
+        onReady={() => setJoined(true)}
+      />
+    );
   } else {
     body = lobbyView;
   }
@@ -645,3 +650,22 @@ const LoadedCallView: FC<LoadedProps> = ({
     </GroupCallErrorBoundary>
   );
 };
+
+interface SkipLobbyMediaPreflightProps {
+  muteStates: MuteStates;
+  onReady: () => void;
+}
+
+/** Waits for the initial browser media permission result before connecting. */
+function SkipLobbyMediaPreflight({
+  muteStates,
+  onReady,
+}: SkipLobbyMediaPreflightProps): null {
+  const { ready } = usePrejoinMedia(muteStates, true);
+
+  useEffect(() => {
+    if (ready) onReady();
+  }, [onReady, ready]);
+
+  return null;
+}
