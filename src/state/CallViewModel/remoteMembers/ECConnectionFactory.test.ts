@@ -6,7 +6,11 @@ Please see LICENSE in the repository root for full details.
 */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { Room as LivekitRoom } from "livekit-client";
+import {
+  Room as LivekitRoom,
+  type BaseKeyProvider,
+  type RoomOptions,
+} from "livekit-client";
 import { BehaviorSubject } from "rxjs";
 import fetchMock from "fetch-mock";
 import { logger } from "matrix-js-sdk/lib/logger";
@@ -49,6 +53,10 @@ vi.mock("livekit-client", async (importOriginal) => {
     }),
   };
 });
+
+vi.mock("livekit-client/e2ee-worker?worker&inline", () => ({
+  default: vi.fn(),
+}));
 
 let testScope: ObservableScope;
 let mockClient: OpenIDClientParts;
@@ -105,6 +113,52 @@ describe("ECConnectionFactory - Audio inputs options", () => {
       );
     },
   );
+});
+
+test("it creates a room when the key provider has a circular reference", () => {
+  const info = vi.spyOn(logger, "info").mockImplementation((...args) => {
+    // 模拟宿主 WebView 的日志接收器，验证传入参数可以被序列化。
+    JSON.stringify(args);
+  });
+  const circularKeyProvider = Object.assign(
+    {} as BaseKeyProvider & { reEmitter: { target?: unknown } },
+    { reEmitter: {} },
+  );
+  circularKeyProvider.reEmitter.target = circularKeyProvider;
+
+  try {
+    const RoomConstructor = vi.mocked(LivekitRoom);
+    const ecConnectionFactory = new ECConnectionFactory(
+      mockClient,
+      "!roomid:example.org",
+      mockMediaDevices({}),
+      new BehaviorSubject<ProcessorState>({
+        supported: true,
+        processor: undefined,
+      }),
+      circularKeyProvider,
+      false,
+    );
+
+    const connection = ecConnectionFactory.createConnection(
+      testScope,
+      exampleTransport,
+      ownMemberMock,
+      logger,
+    );
+
+    expect(connection.livekitRoom).toBeDefined();
+    const roomOptions = RoomConstructor.mock.calls[
+      RoomConstructor.mock.calls.length - 1
+    ]?.[0] as RoomOptions;
+    expect(roomOptions.e2ee?.keyProvider).toBe(circularKeyProvider);
+    expect(info).toHaveBeenCalledWith(
+      "[ECConnectionFactory] livekit room options:",
+      { e2eeEnabled: true, controlledAudioDevices: false },
+    );
+  } finally {
+    info.mockRestore();
+  }
 });
 
 describe("ECConnectionFactory - ControlledAudioDevice", () => {

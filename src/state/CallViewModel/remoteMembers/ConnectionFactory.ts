@@ -86,7 +86,11 @@ export class ECConnectionFactory implements ConnectionFactory {
         },
         controlledAudioDevices: this.controlledAudioDevices,
       });
-      logger.info("[ECConnectionFactory] livekit room options: ", roomOptions);
+      // 只记录标量配置，避免宿主 WebView 序列化含循环引用的 E2EE 对象。
+      logger.info("[ECConnectionFactory] livekit room options:", {
+        e2eeEnabled: roomOptions.e2ee !== undefined,
+        controlledAudioDevices: this.controlledAudioDevices,
+      });
       return new LivekitRoom(roomOptions);
     };
     this.livekitRoomFactory = livekitRoomFactory ?? defaultFactory;
