@@ -49,13 +49,15 @@ function createMockLocalTrack(source: Track.Source): LocalTrack {
   vi.mocked(track).unmute = vi.fn().mockImplementation(() => {
     track.isMuted = false;
   });
-  vi.mocked(track).pauseUpstream = vi.fn().mockImplementation(() => {
+  vi.mocked(track).pauseUpstream = vi.fn().mockImplementation(async () => {
     // @ts-expect-error - for that test we want to set isUpstreamPaused directly
     track.isUpstreamPaused = true;
+    await Promise.resolve();
   });
-  vi.mocked(track).resumeUpstream = vi.fn().mockImplementation(() => {
+  vi.mocked(track).resumeUpstream = vi.fn().mockImplementation(async () => {
     // @ts-expect-error - for that test we want to set isUpstreamPaused directly
     track.isUpstreamPaused = false;
+    await Promise.resolve();
   });
 
   return track;
@@ -168,6 +170,23 @@ beforeEach(() => {
     .fn()
     .mockImplementation((source: Track.Source) => {
       return trackPublications.find((pub) => pub.track?.source === source);
+    });
+
+  vi.mocked(localParticipant).unpublishTrack = vi
+    .fn()
+    .mockImplementation(async (track: LocalTrack) => {
+      const index = trackPublications.findIndex((pub) => pub.track === track);
+      if (index < 0) {
+        await Promise.resolve();
+        return undefined;
+      }
+      const [publication] = trackPublications.splice(index, 1);
+      localParticipant.emit(
+        ParticipantEvent.LocalTrackUnpublished,
+        publication,
+      );
+      await Promise.resolve();
+      return publication;
     });
 
   connection = {
@@ -304,15 +323,306 @@ describe("Publisher", () => {
     expect(track!.isUpstreamPaused).toBe(false);
   });
 
+  it("resumes a microphone published while awaiting another track", async () => {
+    const microphone = createMockLocalTrack(Track.Source.Microphone);
+    const camera = createMockLocalTrack(Track.Source.Camera);
+    trackPublications.push(
+      {
+        track: microphone,
+        source: Track.Source.Microphone,
+        mute: microphone.mute,
+        unmute: microphone.unmute,
+      } as Partial<LocalTrackPublication> as LocalTrackPublication,
+      {
+        track: camera,
+        source: Track.Source.Camera,
+        mute: camera.mute,
+        unmute: camera.unmute,
+      } as Partial<LocalTrackPublication> as LocalTrackPublication,
+    );
+    await publisher.startPublishing();
+    await publisher.stopPublishing();
+
+    const cameraResume = Promise.withResolvers<void>();
+    vi.mocked(camera.resumeUpstream).mockImplementationOnce(async () => {
+      // @ts-expect-error - for that test we want to set isUpstreamPaused directly
+      camera.isUpstreamPaused = false;
+      await cameraResume.promise;
+    });
+    const start = publisher.startPublishing();
+    await flushPromises();
+    expect(camera.resumeUpstream).toHaveBeenCalledOnce();
+
+    await localParticipant.unpublishTrack(microphone);
+    const replacementMicrophone = createMockLocalTrack(Track.Source.Microphone);
+    const replacementPublication = {
+      track: replacementMicrophone,
+      source: Track.Source.Microphone,
+      mute: replacementMicrophone.mute,
+      unmute: replacementMicrophone.unmute,
+    } as Partial<LocalTrackPublication> as LocalTrackPublication;
+    trackPublications.unshift(replacementPublication);
+    localParticipant.emit(
+      ParticipantEvent.LocalTrackPublished,
+      replacementPublication,
+    );
+    await flushPromises();
+    expect(replacementMicrophone.isUpstreamPaused).toBe(true);
+
+    cameraResume.resolve();
+    await start;
+
+    expect(replacementMicrophone.resumeUpstream).toHaveBeenCalledOnce();
+    expect(replacementMicrophone.isUpstreamPaused).toBe(false);
+  });
+
+  it("does not resume a track after it is unpublished", async () => {
+    const track = createMockLocalTrack(Track.Source.Camera);
+    const publication = {
+      track,
+      source: track.source,
+      mute: track.mute,
+      unmute: track.unmute,
+    } as Partial<LocalTrackPublication> as LocalTrackPublication;
+    trackPublications.push(publication);
+
+    await publisher.startPublishing();
+    await publisher.stopPublishing();
+    await localParticipant.unpublishTrack(track);
+    await publisher.startPublishing();
+
+    expect(track.pauseUpstream).toHaveBeenCalledOnce();
+    expect(track.resumeUpstream).not.toHaveBeenCalled();
+  });
+
+  it("resumes an owned current replacement but not its retired publication", async () => {
+    const retiredTrack = createMockLocalTrack(Track.Source.Microphone);
+    const retiredPublication = {
+      track: retiredTrack,
+      source: retiredTrack.source,
+      mute: retiredTrack.mute,
+      unmute: retiredTrack.unmute,
+    } as Partial<LocalTrackPublication> as LocalTrackPublication;
+    trackPublications.push(retiredPublication);
+
+    await publisher.startPublishing();
+    await publisher.stopPublishing();
+    await localParticipant.unpublishTrack(retiredTrack);
+
+    const replacementTrack = createMockLocalTrack(Track.Source.Microphone);
+    const replacementPublication = {
+      track: replacementTrack,
+      source: replacementTrack.source,
+      mute: replacementTrack.mute,
+      unmute: replacementTrack.unmute,
+    } as Partial<LocalTrackPublication> as LocalTrackPublication;
+    trackPublications.unshift(replacementPublication);
+    localParticipant.emit(
+      ParticipantEvent.LocalTrackPublished,
+      replacementPublication,
+    );
+    await flushPromises();
+
+    await publisher.startPublishing();
+
+    expect(retiredTrack.resumeUpstream).not.toHaveBeenCalled();
+    expect(replacementTrack.resumeUpstream).toHaveBeenCalledOnce();
+    expect(replacementTrack.isUpstreamPaused).toBe(false);
+  });
+
+  it("does not resume an unpublished replacement while another track resumes", async () => {
+    const microphone = createMockLocalTrack(Track.Source.Microphone);
+    const camera = createMockLocalTrack(Track.Source.Camera);
+    trackPublications.push(
+      {
+        track: microphone,
+        source: microphone.source,
+        mute: microphone.mute,
+        unmute: microphone.unmute,
+      } as Partial<LocalTrackPublication> as LocalTrackPublication,
+      {
+        track: camera,
+        source: camera.source,
+        mute: camera.mute,
+        unmute: camera.unmute,
+      } as Partial<LocalTrackPublication> as LocalTrackPublication,
+    );
+    await publisher.startPublishing();
+    await publisher.stopPublishing();
+
+    const cameraResume = Promise.withResolvers<void>();
+    vi.mocked(camera.resumeUpstream).mockImplementationOnce(async () => {
+      // @ts-expect-error - for that test we want to set isUpstreamPaused directly
+      camera.isUpstreamPaused = false;
+      await cameraResume.promise;
+    });
+    const start = publisher.startPublishing();
+    await flushPromises();
+    expect(camera.resumeUpstream).toHaveBeenCalledOnce();
+
+    await localParticipant.unpublishTrack(microphone);
+    const replacement = createMockLocalTrack(Track.Source.Microphone);
+    const replacementPublication = {
+      track: replacement,
+      source: replacement.source,
+      mute: replacement.mute,
+      unmute: replacement.unmute,
+    } as Partial<LocalTrackPublication> as LocalTrackPublication;
+    trackPublications.unshift(replacementPublication);
+    localParticipant.emit(
+      ParticipantEvent.LocalTrackPublished,
+      replacementPublication,
+    );
+    await flushPromises();
+    expect(replacement.isUpstreamPaused).toBe(true);
+
+    await localParticipant.unpublishTrack(replacement);
+    cameraResume.resolve();
+    await start;
+
+    expect(replacement.resumeUpstream).not.toHaveBeenCalled();
+  });
+
+  it("removes both publication listeners on destroy", async () => {
+    await publisher.destroy();
+    const onSpy = vi.spyOn(localParticipant, "on");
+    const offSpy = vi.spyOn(localParticipant, "off");
+    const replacementPublisher = new Publisher(
+      connection,
+      mockMediaDevices({}),
+      muteStates,
+      constant({ supported: false, processor: undefined }),
+      logger,
+      false,
+    );
+
+    const publishedOnCall = onSpy.mock.calls.find(
+      ([event]) => event === ParticipantEvent.LocalTrackPublished,
+    );
+    const unpublishedOnCall = onSpy.mock.calls.find(
+      ([event]) => event === ParticipantEvent.LocalTrackUnpublished,
+    );
+    expect(publishedOnCall).toBeDefined();
+    expect(unpublishedOnCall).toBeDefined();
+
+    await replacementPublisher.destroy();
+
+    expect(offSpy).toHaveBeenCalledWith(
+      ParticipantEvent.LocalTrackPublished,
+      publishedOnCall![1],
+    );
+    expect(offSpy).toHaveBeenCalledWith(
+      ParticipantEvent.LocalTrackUnpublished,
+      unpublishedOnCall![1],
+    );
+
+    const track = createMockLocalTrack(Track.Source.Camera);
+    const publication = {
+      track,
+      source: track.source,
+    } as LocalTrackPublication;
+    localParticipant.emit(ParticipantEvent.LocalTrackPublished, publication);
+    localParticipant.emit(ParticipantEvent.LocalTrackUnpublished, publication);
+    await flushPromises();
+    expect(track.pauseUpstream).not.toHaveBeenCalled();
+  });
+
+  it("continues pausing tracks after one pause fails and retries the failed track", async () => {
+    const microphone = createMockLocalTrack(Track.Source.Microphone);
+    const camera = createMockLocalTrack(Track.Source.Camera);
+    const screen = createMockLocalTrack(Track.Source.ScreenShare);
+    trackPublications.push(
+      {
+        track: microphone,
+        source: Track.Source.Microphone,
+        mute: microphone.mute,
+        unmute: microphone.unmute,
+      } as Partial<LocalTrackPublication> as LocalTrackPublication,
+      {
+        track: camera,
+        source: Track.Source.Camera,
+        mute: camera.mute,
+        unmute: camera.unmute,
+      } as Partial<LocalTrackPublication> as LocalTrackPublication,
+      {
+        track: screen,
+        source: Track.Source.ScreenShare,
+        mute: screen.mute,
+        unmute: screen.unmute,
+      } as Partial<LocalTrackPublication> as LocalTrackPublication,
+    );
+    await publisher.startPublishing();
+    vi.mocked(microphone.pauseUpstream).mockRejectedValueOnce(
+      new Error("mic pause failed"),
+    );
+
+    await expect(publisher.stopPublishing()).rejects.toThrow(
+      "mic pause failed",
+    );
+    expect(microphone.pauseUpstream).toHaveBeenCalledOnce();
+    expect(camera.pauseUpstream).toHaveBeenCalledOnce();
+    expect(screen.pauseUpstream).toHaveBeenCalledOnce();
+    expect(camera.isUpstreamPaused).toBe(true);
+    expect(screen.isUpstreamPaused).toBe(true);
+
+    await publisher.stopPublishing();
+    expect(microphone.pauseUpstream).toHaveBeenCalledTimes(2);
+    expect(microphone.isUpstreamPaused).toBe(true);
+  });
+
+  it("continues resuming tracks after one resume fails and retries the failed track", async () => {
+    const microphone = createMockLocalTrack(Track.Source.Microphone);
+    const camera = createMockLocalTrack(Track.Source.Camera);
+    const screen = createMockLocalTrack(Track.Source.ScreenShare);
+    trackPublications.push(
+      {
+        track: microphone,
+        source: Track.Source.Microphone,
+        mute: microphone.mute,
+        unmute: microphone.unmute,
+      } as Partial<LocalTrackPublication> as LocalTrackPublication,
+      {
+        track: camera,
+        source: Track.Source.Camera,
+        mute: camera.mute,
+        unmute: camera.unmute,
+      } as Partial<LocalTrackPublication> as LocalTrackPublication,
+      {
+        track: screen,
+        source: Track.Source.ScreenShare,
+        mute: screen.mute,
+        unmute: screen.unmute,
+      } as Partial<LocalTrackPublication> as LocalTrackPublication,
+    );
+    await publisher.startPublishing();
+    await publisher.stopPublishing();
+    vi.mocked(microphone.resumeUpstream).mockRejectedValueOnce(
+      new Error("mic resume failed"),
+    );
+
+    await publisher.startPublishing();
+    expect(microphone.resumeUpstream).toHaveBeenCalledOnce();
+    expect(camera.resumeUpstream).toHaveBeenCalledOnce();
+    expect(screen.resumeUpstream).toHaveBeenCalledOnce();
+    expect(microphone.isUpstreamPaused).toBe(true);
+    expect(camera.isUpstreamPaused).toBe(false);
+    expect(screen.isUpstreamPaused).toBe(false);
+
+    await publisher.startPublishing();
+    expect(microphone.resumeUpstream).toHaveBeenCalledTimes(2);
+    expect(microphone.isUpstreamPaused).toBe(false);
+  });
+
   it("resumes screenshare upstream when publishing starts again", async () => {
     const screenTrack = createMockLocalTrack(Track.Source.ScreenShare);
-    await screenTrack.pauseUpstream();
     trackPublications.push({
       track: screenTrack,
       source: Track.Source.ScreenShare,
       mute: screenTrack.mute,
       unmute: screenTrack.unmute,
     } as Partial<LocalTrackPublication> as LocalTrackPublication);
+    await publisher.startPublishing();
+    await publisher.stopPublishing();
 
     await publisher.startPublishing();
 
@@ -323,8 +633,6 @@ describe("Publisher", () => {
   it("keeps camera behavior while also resuming screenshare upstream", async () => {
     const cameraTrack = createMockLocalTrack(Track.Source.Camera);
     const screenTrack = createMockLocalTrack(Track.Source.ScreenShare);
-    await cameraTrack.pauseUpstream();
-    await screenTrack.pauseUpstream();
     trackPublications.push(
       {
         track: cameraTrack,
@@ -339,11 +647,228 @@ describe("Publisher", () => {
         unmute: screenTrack.unmute,
       } as Partial<LocalTrackPublication> as LocalTrackPublication,
     );
+    await publisher.startPublishing();
+    await publisher.stopPublishing();
 
     await publisher.startPublishing();
 
     expect(cameraTrack.resumeUpstream).toHaveBeenCalledOnce();
     expect(screenTrack.resumeUpstream).toHaveBeenCalledOnce();
+  });
+
+  it("retries a failed new-track pause when disabled is requested again", async () => {
+    await publisher.setPublishingEnabled(false);
+    const track = createMockLocalTrack(Track.Source.Microphone);
+    vi.mocked(track.pauseUpstream).mockRejectedValueOnce(
+      new Error("pause failed"),
+    );
+    const publication = {
+      track,
+      source: track.source,
+    } as LocalTrackPublication;
+    trackPublications.push(publication);
+    localParticipant.emit(ParticipantEvent.LocalTrackPublished, publication);
+    await flushPromises();
+    expect(track.isUpstreamPaused).toBe(false);
+
+    await publisher.setPublishingEnabled(false);
+    expect(track.pauseUpstream).toHaveBeenCalledTimes(2);
+    expect(track.isUpstreamPaused).toBe(true);
+  });
+
+  it("does not resume an upstream paused by another owner", async () => {
+    const track = createMockLocalTrack(Track.Source.Camera);
+    await track.pauseUpstream();
+    trackPublications.push({
+      track,
+      source: Track.Source.Camera,
+      mute: track.mute,
+      unmute: track.unmute,
+    } as Partial<LocalTrackPublication> as LocalTrackPublication);
+
+    await publisher.startPublishing();
+
+    expect(track.resumeUpstream).not.toHaveBeenCalled();
+    expect(track.isUpstreamPaused).toBe(true);
+  });
+
+  it("pauses and resumes screen-share audio with publishing", async () => {
+    const track = createMockLocalTrack(Track.Source.ScreenShareAudio);
+    trackPublications.push({
+      track,
+      source: Track.Source.ScreenShareAudio,
+      mute: track.mute,
+      unmute: track.unmute,
+    } as Partial<LocalTrackPublication> as LocalTrackPublication);
+    localParticipant.emit(ParticipantEvent.LocalTrackPublished, {
+      track,
+      source: Track.Source.ScreenShareAudio,
+    } as LocalTrackPublication);
+    await flushPromises();
+
+    await publisher.startPublishing();
+
+    expect(track.pauseUpstream).toHaveBeenCalledOnce();
+    expect(track.resumeUpstream).toHaveBeenCalledOnce();
+    expect(track.isUpstreamPaused).toBe(false);
+  });
+
+  it("does not start a second pause after unpublish while pause is pending", async () => {
+    const track = createMockLocalTrack(Track.Source.Camera);
+    const publication = {
+      track,
+      source: track.source,
+      mute: track.mute,
+      unmute: track.unmute,
+    } as Partial<LocalTrackPublication> as LocalTrackPublication;
+    trackPublications.push(publication);
+    await publisher.startPublishing();
+
+    const pause = Promise.withResolvers<void>();
+    vi.mocked(track.pauseUpstream).mockImplementationOnce(async () => {
+      await pause.promise;
+    });
+    const stop = publisher.stopPublishing();
+    await flushPromises();
+    expect(track.pauseUpstream).toHaveBeenCalledOnce();
+
+    // A second publication notification waits on the first pause operation.
+    localParticipant.emit(ParticipantEvent.LocalTrackPublished, publication);
+    await flushPromises();
+    await localParticipant.unpublishTrack(track);
+    pause.resolve();
+    await stop;
+    await flushPromises();
+
+    expect(track.pauseUpstream).toHaveBeenCalledOnce();
+  });
+
+  it("does not start a second pause after destroy while pause is pending", async () => {
+    const track = createMockLocalTrack(Track.Source.Camera);
+    const publication = {
+      track,
+      source: track.source,
+      mute: track.mute,
+      unmute: track.unmute,
+    } as Partial<LocalTrackPublication> as LocalTrackPublication;
+    trackPublications.push(publication);
+    await publisher.startPublishing();
+
+    const pause = Promise.withResolvers<void>();
+    vi.mocked(track.pauseUpstream).mockImplementationOnce(async () => {
+      await pause.promise;
+    });
+    const stop = publisher.stopPublishing();
+    await flushPromises();
+    expect(track.pauseUpstream).toHaveBeenCalledOnce();
+
+    // A second publication notification waits on the first pause operation.
+    localParticipant.emit(ParticipantEvent.LocalTrackPublished, publication);
+    await flushPromises();
+    const destroy = publisher.destroy();
+    pause.resolve();
+    await Promise.all([stop, destroy]);
+    await flushPromises();
+
+    expect(track.pauseUpstream).toHaveBeenCalledOnce();
+  });
+
+  it("resumes after reconnect races an asynchronous pause", async () => {
+    const track = createMockLocalTrack(Track.Source.Camera);
+    trackPublications.push({
+      track,
+      source: Track.Source.Camera,
+      mute: track.mute,
+      unmute: track.unmute,
+    } as Partial<LocalTrackPublication> as LocalTrackPublication);
+
+    await publisher.startPublishing();
+
+    const pause = Promise.withResolvers<void>();
+    vi.mocked(track.pauseUpstream).mockImplementationOnce(async () => {
+      // @ts-expect-error - for that test we want to set isUpstreamPaused directly
+      track.isUpstreamPaused = true;
+      await pause.promise;
+    });
+    const stop = publisher.stopPublishing();
+    await flushPromises();
+    expect(track.pauseUpstream).toHaveBeenCalledOnce();
+
+    const start = publisher.startPublishing();
+    pause.resolve();
+    await Promise.all([stop, start]);
+
+    expect(track.resumeUpstream).toHaveBeenCalledOnce();
+    expect(track.isUpstreamPaused).toBe(false);
+  });
+
+  it("does not start a resume after destroy", async () => {
+    const track = createMockLocalTrack(Track.Source.Camera);
+    trackPublications.push({
+      track,
+      source: Track.Source.Camera,
+      mute: track.mute,
+      unmute: track.unmute,
+    } as Partial<LocalTrackPublication> as LocalTrackPublication);
+    await publisher.startPublishing();
+    await publisher.stopPublishing();
+
+    const resume = Promise.withResolvers<void>();
+    vi.mocked(track.resumeUpstream).mockImplementationOnce(async () => {
+      // @ts-expect-error - for that test we want to set isUpstreamPaused directly
+      track.isUpstreamPaused = false;
+      await resume.promise;
+    });
+    vi.spyOn(localParticipant, "unpublishTrack").mockResolvedValue(
+      {} as LocalTrackPublication,
+    );
+    const start = publisher.startPublishing();
+    await flushPromises();
+    expect(track.resumeUpstream).toHaveBeenCalledOnce();
+
+    const resumeCallsAtDestroy = vi.mocked(track.resumeUpstream).mock.calls
+      .length;
+    const pauseCallsAtDestroy = vi.mocked(track.pauseUpstream).mock.calls
+      .length;
+    const destroy = publisher.destroy();
+    resume.resolve();
+    await Promise.all([start, destroy]);
+
+    expect(track.resumeUpstream).toHaveBeenCalledTimes(resumeCallsAtDestroy);
+    // An in-flight LiveKit resume cannot be cancelled. Destroy must not issue a
+    // compensating pause after the operation settles; stopTracks is its explicit
+    // cleanup path.
+    expect(track.pauseUpstream).toHaveBeenCalledTimes(pauseCallsAtDestroy);
+  });
+
+  it("pauses again when disconnect races an asynchronous resume", async () => {
+    const track = createMockLocalTrack(Track.Source.Camera);
+    trackPublications.push({
+      track,
+      source: Track.Source.Camera,
+      mute: track.mute,
+      unmute: track.unmute,
+    } as Partial<LocalTrackPublication> as LocalTrackPublication);
+
+    await publisher.startPublishing();
+    await publisher.stopPublishing();
+
+    const resume = Promise.withResolvers<void>();
+    vi.mocked(track.resumeUpstream).mockImplementationOnce(async () => {
+      // @ts-expect-error - for that test we want to set isUpstreamPaused directly
+      track.isUpstreamPaused = false;
+      await resume.promise;
+    });
+    const start = publisher.startPublishing();
+    await flushPromises();
+    expect(track.resumeUpstream).toHaveBeenCalledOnce();
+
+    const stop = publisher.stopPublishing();
+    resume.resolve();
+    await Promise.all([start, stop]);
+
+    expect(track.pauseUpstream).toHaveBeenCalledTimes(2);
+    expect(track.isUpstreamPaused).toBe(true);
   });
 
   describe("Mute states", () => {

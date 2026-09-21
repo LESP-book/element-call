@@ -90,6 +90,7 @@ exports[`InCallView > rendering > renders 1`] = `
       <button
         aria-label="Hide header"
         aria-labelledby="_r_5_"
+        aria-pressed="true"
         class="_icon-button_1215g_8 _button_ba9695"
         data-kind="primary"
         role="button"

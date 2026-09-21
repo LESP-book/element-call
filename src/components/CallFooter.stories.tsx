@@ -136,6 +136,7 @@ export const Default: Story = {
     participantCount: 3,
     theme: "dark",
     buttonSize: "lg",
+    showLogo: false,
     showFooter: true,
     hideControls: false,
     asOverlay: false,
@@ -230,6 +231,11 @@ export const AudioVideoEnabled: Story = {
       name: "End call",
     });
     await userEvent.click(endCall);
+    await userEvent.click(
+      within(canvasElement.ownerDocument.body).getByRole("menuitem", {
+        name: "Leave call",
+      }),
+    );
     await expect(args.hangup).toHaveBeenCalled();
   },
 };
@@ -307,6 +313,11 @@ export const Pip: Story = {
       name: "End call",
     });
     await userEvent.click(endCall);
+    await userEvent.click(
+      within(canvasElement.ownerDocument.body).getByRole("menuitem", {
+        name: "Leave call",
+      }),
+    );
     await expect(args.hangup).toHaveBeenCalled();
   },
 };

@@ -326,11 +326,15 @@ const LoadedCallView: FC<LoadedProps> = ({
 
   useEffect(() => {
     if (!pendingAutoReconnect) return;
-    void recoverCall().finally(() => {
-      queueMicrotask(() => {
-        setPendingAutoReconnect(false);
+    void recoverCall()
+      .finally(() => {
+        queueMicrotask(() => {
+          setPendingAutoReconnect(false);
+        });
+      })
+      .catch((error) => {
+        logger.error("Automatic call recovery failed", error);
       });
-    });
   }, [pendingAutoReconnect, recoverCall]);
 
   useEffect(() => {

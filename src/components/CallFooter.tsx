@@ -14,6 +14,8 @@ import {
 } from "react";
 import classNames from "classnames";
 
+import LogoMark from "../icons/LogoMark.svg?react";
+import LogoType from "../icons/LogoType.svg?react";
 import {
   EndCallButton,
   MicButton,
@@ -88,6 +90,7 @@ export interface FooterState {
   showModals: boolean;
 
   buttonSize: "md" | "lg";
+  showLogo: boolean;
 
   /** Also controls if the layout switch is visible */
   layoutSwitchVm: LayoutSwitchViewModel | null;
@@ -158,6 +161,7 @@ export const CallFooter: FC<FooterProps> = ({
   const toggleBlur = useBehavior(vm.toggleBlur$);
   const videoBlurEnabled = useBehavior(vm.videoBlurEnabled$);
   const buttonSize = useBehavior(vm.buttonSize$);
+  const showLogo = useBehavior(vm.showLogo$);
 
   const stopPointerUpPropagation = (e: ReactPointerEvent): void => {
     // 工具栏中的点击不能被通话视图当作背景轻点处理。
@@ -302,11 +306,23 @@ export const CallFooter: FC<FooterProps> = ({
       />,
     );
 
-  const debugContainer = debugTileLayout ? (
-    <div className={styles.debug}>
-      <TilesDebugInfo generation$={vm.tileStoreGeneration$} />
+  const logoDebugContainer = (
+    <div className={styles.logo}>
+      {showLogo && (
+        <>
+          <LogoMark width={24} height={24} aria-hidden />
+          <LogoType
+            width={80}
+            height={11}
+            aria-label={import.meta.env.VITE_PRODUCT_NAME || "Element Call"}
+          />
+        </>
+      )}
+      {debugTileLayout ? (
+        <TilesDebugInfo generation$={vm.tileStoreGeneration$} />
+      ) : undefined}
     </div>
-  ) : undefined;
+  );
 
   return (
     <div
@@ -334,7 +350,7 @@ export const CallFooter: FC<FooterProps> = ({
             />
           )}
           {children}
-          {debugContainer}
+          {(showLogo || debugTileLayout) && logoDebugContainer}
         </div>
         {!hideControls && <div className={styles.buttons}>{buttons}</div>}
         {!hideControls && layoutSwitchVm && (

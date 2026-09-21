@@ -151,7 +151,9 @@ test("it creates a room when the key provider has a circular reference", () => {
     const roomOptions = RoomConstructor.mock.calls[
       RoomConstructor.mock.calls.length - 1
     ]?.[0] as RoomOptions;
-    expect(roomOptions.e2ee?.keyProvider).toBe(circularKeyProvider);
+    expect(roomOptions.e2ee).toEqual(
+      expect.objectContaining({ keyProvider: circularKeyProvider }),
+    );
     expect(info).toHaveBeenCalledWith(
       "[ECConnectionFactory] livekit room options:",
       { e2eeEnabled: true, controlledAudioDevices: false },

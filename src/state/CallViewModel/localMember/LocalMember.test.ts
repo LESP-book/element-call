@@ -23,7 +23,13 @@ import {
 } from "vitest";
 import { BehaviorSubject, map, of } from "rxjs";
 import { logger } from "matrix-js-sdk/lib/logger";
-import { type LocalParticipant, type LocalTrack } from "livekit-client";
+import {
+  type LocalParticipant,
+  type LocalTrack,
+  type LocalTrackPublication,
+  ParticipantEvent,
+  Track,
+} from "livekit-client";
 import fetchMock from "fetch-mock";
 
 import { PosthogAnalytics } from "../../../analytics/PosthogAnalytics";
@@ -37,6 +43,7 @@ import {
   mockConfig,
   mockLivekitRoom,
   mockLocalParticipant,
+  mockMediaDevices,
   mockMuteStates,
   withTestScheduler,
   ownMemberMock,
@@ -58,7 +65,7 @@ import { Epoch, ObservableScope } from "../../ObservableScope";
 import { constant } from "../../Behavior";
 import { ConnectionManagerData } from "../remoteMembers/ConnectionManager";
 import { ConnectionState, type Connection } from "../remoteMembers/Connection";
-import { type Publisher } from "./Publisher";
+import { Publisher } from "./Publisher";
 import { initializeWidget } from "../../../widget";
 import { nullHostBridge } from "../../../HostBridge";
 import {
@@ -76,6 +83,7 @@ vi.mock("@livekit/components-core", () => ({
   observeParticipantEvents: vi
     .fn()
     .mockReturnValue(of({ isScreenShareEnabled: false })),
+  observeParticipantMedia: vi.fn().mockReturnValue(of(undefined)),
 }));
 
 describe("watchScreenShareToggle", () => {
@@ -318,7 +326,9 @@ describe("LocalMembership", () => {
 
       defaultCreateLocalMemberValues.createPublisherFactory.mockImplementation(
         () => {
-          return {} as unknown as Publisher;
+          return {
+            setPublishingEnabled: vi.fn().mockResolvedValue(undefined),
+          } as unknown as Publisher;
         },
       );
       const publisherFactory =
@@ -525,6 +535,7 @@ describe("LocalMembership", () => {
           // It is enought to check if destroy is called. Destroy itself is tested in the publisher to make sure it does
           // all the cleanup we need.
           destroy: vi.fn(),
+          setPublishingEnabled: vi.fn(),
           stopPublishing: vi.fn().mockImplementation(() => {
             logger.info(`stopPublishing [${a}]`);
           }),
@@ -586,6 +597,7 @@ describe("LocalMembership", () => {
           // It is enought to check if destroy is called. Destroy itself is tested in the publisher to make sure it does
           // all the cleanup we need.
           destroy: vi.fn(),
+          setPublishingEnabled: vi.fn(),
           createAndSetupTracks: vi.fn().mockImplementation(async () => {
             tracks$.next([{}, {}] as LocalTrack[]);
             return Promise.resolve();
@@ -662,6 +674,9 @@ describe("LocalMembership", () => {
           // It is enought to check if destroy is called. Destroy itself is tested in the publisher to make sure it does
           // all the cleanup we need.
           destroy: vi.fn(),
+          setPublishingEnabled: vi.fn().mockImplementation(async (enabled) => {
+            if (enabled) await publishResolver.promise;
+          }),
           createAndSetupTracks: vi.fn().mockImplementation(async () => {
             await createTrackResolver.promise;
           }),
@@ -782,6 +797,181 @@ describe("LocalMembership", () => {
     expect(publishers[0].destroy).toHaveBeenCalled();
     // expect(publishers[0].stopTracks).toHaveBeenCalled();
   });
+  it("only enables publishing while join intent and MatrixRTC are connected", async () => {
+    const scope = new ObservableScope();
+    const homeserverState$ = new BehaviorSubject<
+      [boolean, HomeserverDisconnectReason | null]
+    >([false, "membership"]);
+    const setPublishingEnabled = vi.fn().mockResolvedValue(undefined);
+    const publisher = {
+      destroy: vi.fn(),
+      setPublishingEnabled,
+      createAndSetupTracks: vi.fn().mockResolvedValue(undefined),
+    } as unknown as Publisher;
+    defaultCreateLocalMemberValues.createPublisherFactory.mockReturnValue(
+      publisher,
+    );
+
+    const connectionManagerData = new ConnectionManagerData();
+    connectionManagerData.add(connectionTransportAConnected, []);
+    const localMembership = createLocalMembership$({
+      scope,
+      ...defaultCreateLocalMemberValues,
+      homeserverConnected: {
+        combined$: homeserverState$,
+        rtsSession$: constant(RTCMemberStatus.Connected),
+      },
+      connectionManager: {
+        connectionManagerData$: constant(new Epoch(connectionManagerData)),
+      },
+      localTransport: {
+        advertised$: constant(aTransport),
+        active$: constant(aTransportWithSFUConfig),
+      },
+    });
+
+    await flushPromises();
+    localMembership.requestJoinAndPublish();
+    await flushPromises();
+    expect(setPublishingEnabled).not.toHaveBeenCalledWith(true);
+
+    homeserverState$.next([true, null]);
+    await flushPromises();
+    expect(setPublishingEnabled).toHaveBeenLastCalledWith(true);
+
+    homeserverState$.next([false, "sync"]);
+    await flushPromises();
+    expect(setPublishingEnabled).toHaveBeenLastCalledWith(false);
+
+    scope.end();
+  });
+
+  it("drives a real Publisher through LocalMember across interleaved MatrixRTC transitions", async () => {
+    const scope = new ObservableScope();
+    const homeserverState$ = new BehaviorSubject<
+      [boolean, HomeserverDisconnectReason | null]
+    >([true, null]);
+    const tracks: LocalTrack[] = [];
+    const localParticipant = mockLocalParticipant({
+      trackPublications: new Map(),
+      getTrackPublication: vi.fn((source: Track.Source) =>
+        tracks.find((track) => track.source === source)
+          ? ({
+              track: tracks.find((track) => track.source === source),
+              source,
+            } as LocalTrackPublication)
+          : undefined,
+      ),
+      unpublishTrack: vi.fn().mockResolvedValue(undefined),
+      setMicrophoneEnabled: vi.fn().mockResolvedValue(undefined),
+      setCameraEnabled: vi.fn().mockResolvedValue(undefined),
+    });
+    const connection = {
+      ...connectionTransportAConnected,
+      livekitRoom: mockLivekitRoom({ localParticipant }),
+    } as unknown as Connection;
+    const publishers: Publisher[] = [];
+    const createPublisherFactory = vi.fn((publisherConnection: Connection) => {
+      const publisher = new Publisher(
+        publisherConnection,
+        mockMediaDevices({}),
+        mockMuteStates(),
+        constant({ supported: false, processor: undefined }),
+        logger,
+        false,
+      );
+      publishers.push(publisher);
+      return publisher;
+    });
+
+    const createTrack = (source: Track.Source): LocalTrack => {
+      const track = {
+        source,
+        isUpstreamPaused: false,
+      } as Partial<LocalTrack> as LocalTrack;
+      vi.mocked(track).pauseUpstream = vi.fn().mockImplementation(async () => {
+        // @ts-expect-error - this test models LiveKit's mutable track state
+        track.isUpstreamPaused = true;
+        await Promise.resolve();
+      });
+      vi.mocked(track).resumeUpstream = vi.fn().mockImplementation(async () => {
+        // @ts-expect-error - this test models LiveKit's mutable track state
+        track.isUpstreamPaused = false;
+        await Promise.resolve();
+      });
+      return track;
+    };
+    const publish = (track: LocalTrack): LocalTrack => {
+      tracks.unshift(track);
+      localParticipant.emit(ParticipantEvent.LocalTrackPublished, {
+        track,
+        source: track.source,
+        mute: track.mute,
+        unmute: track.unmute,
+      } as LocalTrackPublication);
+      return track;
+    };
+
+    const connectionManagerData = new ConnectionManagerData();
+    connectionManagerData.add(connection, []);
+    const localMembership = createLocalMembership$({
+      scope,
+      ...defaultCreateLocalMemberValues,
+      createPublisherFactory,
+      homeserverConnected: {
+        combined$: homeserverState$,
+        rtsSession$: constant(RTCMemberStatus.Connected),
+      },
+      connectionManager: {
+        connectionManagerData$: constant(new Epoch(connectionManagerData)),
+      },
+      localTransport: {
+        advertised$: constant(aTransport),
+        active$: constant(aTransportWithSFUConfig),
+      },
+    });
+
+    await flushPromises();
+    expect(publishers).toHaveLength(1);
+    const microphone = publish(createTrack(Track.Source.Microphone));
+    const camera = publish(createTrack(Track.Source.Camera));
+    await flushPromises();
+    expect(microphone.isUpstreamPaused).toBe(true);
+    expect(camera.isUpstreamPaused).toBe(true);
+
+    const cameraResume = Promise.withResolvers<void>();
+    vi.mocked(camera.resumeUpstream).mockImplementationOnce(async () => {
+      // @ts-expect-error - this test models LiveKit's mutable track state
+      camera.isUpstreamPaused = false;
+      await cameraResume.promise;
+    });
+    localMembership.requestJoinAndPublish();
+    await flushPromises();
+    expect(camera.resumeUpstream).toHaveBeenCalledOnce();
+
+    const replacementMicrophone = publish(createTrack(Track.Source.Microphone));
+    await flushPromises();
+    expect(replacementMicrophone.isUpstreamPaused).toBe(true);
+
+    homeserverState$.next([false, "sync"]);
+    homeserverState$.next([true, null]);
+    homeserverState$.next([false, "sync"]);
+    cameraResume.resolve();
+    await flushPromises();
+    await flushPromises();
+    expect(replacementMicrophone.resumeUpstream).not.toHaveBeenCalled();
+    expect(replacementMicrophone.isUpstreamPaused).toBe(true);
+
+    const disconnectedMicrophone = publish(
+      createTrack(Track.Source.Microphone),
+    );
+    await flushPromises();
+    expect(disconnectedMicrophone.isUpstreamPaused).toBe(true);
+
+    scope.end();
+    await flushPromises();
+  });
+
   // TODO add tests for matrix local matrix participation.
 
   describe("reconnecting analytics", () => {

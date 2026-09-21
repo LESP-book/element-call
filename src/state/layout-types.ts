@@ -21,28 +21,40 @@ import { shallowEquals as arrayShallowEquals } from "../utils/array.ts";
 export interface GridLayoutMedia {
   type: "grid";
   edgeToEdge: false;
+  /** Media that determines whether this layout has a spotlight. */
   spotlight?: MediaViewModel[];
+  /** Additional media available in the spotlight carousel. */
+  spotlightMedia?: MediaViewModel[];
   grid: UserMediaViewModel[];
 }
 
 export interface SpotlightLandscapeLayoutMedia {
   type: "spotlight-landscape";
   edgeToEdge: boolean;
+  /** Media that determines the layout's spotlight state. */
   spotlight: MediaViewModel[];
+  /** Additional media available in the spotlight carousel. */
+  spotlightMedia?: MediaViewModel[];
   grid: UserMediaViewModel[];
 }
 
 export interface SpotlightPortraitLayoutMedia {
   type: "spotlight-portrait";
   edgeToEdge: false;
+  /** Media that determines the layout's spotlight state. */
   spotlight: MediaViewModel[];
+  /** Additional media available in the spotlight carousel. */
+  spotlightMedia?: MediaViewModel[];
   grid: UserMediaViewModel[];
 }
 
 export interface SpotlightExpandedLayoutMedia {
   type: "spotlight-expanded";
   edgeToEdge: boolean;
+  /** Media that determines the layout's spotlight state. */
   spotlight: MediaViewModel[];
+  /** Additional media available in the spotlight carousel. */
+  spotlightMedia?: MediaViewModel[];
   pip?: UserMediaViewModel;
 }
 
@@ -63,7 +75,9 @@ export interface OneOnOneMobileLayoutMedia {
 export interface PipLayoutMedia {
   type: "pip";
   edgeToEdge: boolean;
+  /** Media that is available in the spotlight carousel. */
   spotlight: MediaViewModel[];
+  spotlightMedia?: MediaViewModel[];
 }
 
 export type LayoutMedia =

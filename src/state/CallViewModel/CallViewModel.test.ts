@@ -12,6 +12,7 @@ import {
   combineLatest,
   debounceTime,
   distinctUntilChanged,
+  filter,
   map,
   NEVER,
   type Observable,
@@ -182,6 +183,28 @@ export type LayoutSummary =
   | OneOnOnePortraitLayoutSummary
   | PipLayoutSummary;
 
+function spotlightCarouselIds$(l$: Observable<Layout>): Observable<string[]> {
+  return l$.pipe(
+    switchMap((layout) => {
+      switch (layout.type) {
+        case "grid":
+        case "spotlight-landscape":
+        case "spotlight-portrait":
+        case "spotlight-expanded":
+        case "one-on-one-mobile":
+        case "pip":
+          return (layout.spotlight?.media$ ?? constant([])).pipe(
+            map((media) => media.map(({ id }) => id)),
+          );
+        case "one-on-one-desktop":
+          return layout.spotlight.media$.pipe(map(({ id }) => [id]));
+      }
+    }),
+    filter((ids) => ids.length > 0),
+    distinctUntilChanged(deepCompare),
+  );
+}
+
 function summarizeLayout$(l$: Observable<Layout>): Observable<LayoutSummary> {
   return l$.pipe(
     switchMap((l) => {
@@ -189,7 +212,7 @@ function summarizeLayout$(l$: Observable<Layout>): Observable<LayoutSummary> {
         case "grid":
           return combineLatest(
             [
-              l.spotlight?.media$ ?? constant(undefined),
+              l.spotlight?.layoutMedia$ ?? constant(undefined),
               ...l.grid.map((vm) => vm.media$),
             ],
             (spotlight, ...grid) => ({
@@ -201,7 +224,7 @@ function summarizeLayout$(l$: Observable<Layout>): Observable<LayoutSummary> {
         case "spotlight-landscape":
         case "spotlight-portrait":
           return combineLatest(
-            [l.spotlight.media$, ...l.grid.map((vm) => vm.media$)],
+            [l.spotlight.layoutMedia$, ...l.grid.map((vm) => vm.media$)],
             (spotlight, ...grid) => ({
               type: l.type,
               spotlight: spotlight.map((vm) => vm.id),
@@ -210,7 +233,7 @@ function summarizeLayout$(l$: Observable<Layout>): Observable<LayoutSummary> {
           );
         case "spotlight-expanded":
           return combineLatest(
-            [l.spotlight.media$, l.pip?.media$ ?? constant(undefined)],
+            [l.spotlight.layoutMedia$, l.pip?.media$ ?? constant(undefined)],
             (spotlight, pip) => ({
               type: l.type,
               spotlight: spotlight.map((vm) => vm.id),
@@ -241,7 +264,7 @@ function summarizeLayout$(l$: Observable<Layout>): Observable<LayoutSummary> {
             }),
           );
         case "pip":
-          return l.spotlight.media$.pipe(
+          return l.spotlight.layoutMedia$.pipe(
             map((spotlight) => ({
               type: l.type,
               spotlight: spotlight.map((vm) => vm.id),
@@ -388,6 +411,25 @@ describe.each(modes)("CallViewModel (%s mode)", (mode) => {
             expectedShowSpeakingMarbles,
             yesNo,
           );
+        },
+      );
+    });
+  });
+
+  test("spotlight carousel includes the camera and falls back after share stop", () => {
+    withTestScheduler(({ behavior, expectObservable }) => {
+      withCallViewModel(
+        {
+          remoteParticipants$: constant([aliceParticipant]),
+          rtcMembers$: constant([localRtcMember, aliceRtcMember]),
+          sharingScreen: new Map([[aliceParticipant, behavior("nyn", yesNo)]]),
+        },
+        (vm) => {
+          expectObservable(spotlightCarouselIds$(vm.layout$)).toBe("abc", {
+            a: [`${aliceId}:0`],
+            b: [`${aliceId}:0:screen-share`, `${aliceId}:0`],
+            c: [`${aliceId}:0`],
+          });
         },
       );
     });
@@ -1479,7 +1521,7 @@ describe.each(modes)("CallViewModel (%s mode)", (mode) => {
     let rtcSession: MockRTCSession | undefined;
 
     withCallViewModel(
-      {},
+      { rtcMembers$: constant([localRtcMember, aliceRtcMember]) },
       (vm, session, _subjects, _setSyncState, callScope) => {
         rtcSession = session;
         scope = callScope;
@@ -1495,15 +1537,16 @@ describe.each(modes)("CallViewModel (%s mode)", (mode) => {
             event_id: "$termination:example.org",
             sender: aliceUserId,
             type: ElementCallTerminateEventType,
+            origin_server_ts: 12345,
             content: {
               terminated_by: aliceUserId,
               timestamp: 12345,
             },
           }),
           session.room,
-          undefined,
           false,
-          {} as IRoomTimelineData,
+          false,
+          { liveEvent: true } as IRoomTimelineData,
         );
       },
     );

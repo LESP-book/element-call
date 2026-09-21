@@ -7,6 +7,7 @@ Please see LICENSE in the repository root for full details.
 */
 import {
   ConnectionState as LivekitConnectionState,
+  type LocalTrack,
   type LocalTrackPublication,
   LocalVideoTrack,
   ParticipantEvent,
@@ -40,6 +41,13 @@ import { observeTrackReference$ } from "../../observeTrackReference";
 import { type Connection } from "../remoteMembers/Connection.ts";
 import { ObservableScope } from "../../ObservableScope.ts";
 
+const PUBLISHABLE_TRACK_SOURCES: Track.Source[] = [
+  Track.Source.Microphone,
+  Track.Source.Camera,
+  Track.Source.ScreenShare,
+  Track.Source.ScreenShareAudio,
+];
+
 /**
  * A wrapper for a Connection object.
  * This wrapper will manage the connection used to publish to the LiveKit room.
@@ -53,7 +61,35 @@ export class Publisher {
    */
   public shouldPublish = false;
 
+  private publishingRequested = false;
+  private publishingReconcile: Promise<void> | undefined;
+  private publishingTransitionNeedsRetry = false;
+  private destroyed = false;
+
   private readonly scope = new ObservableScope();
+
+  /** Tracks paused by this Publisher, so unrelated upstream pauses are preserved. */
+  private readonly pausedUpstreams = new Set<LocalTrack>();
+  private readonly upstreamOperations = new Map<LocalTrack, Promise<void>>();
+
+  private readonly onLocalTrackPublished = (
+    localTrackPublication: LocalTrackPublication,
+  ): void => {
+    this.handleLocalTrackPublished(localTrackPublication);
+  };
+
+  private readonly onLocalTrackUnpublished = (
+    localTrackPublication: LocalTrackPublication,
+  ): void => {
+    if (this.destroyed) return;
+    const track = localTrackPublication.track;
+    if (!track) return;
+
+    // Releasing ownership does not cancel an in-flight LiveKit operation. The
+    // operation remains tracked until it settles, while current-publication
+    // checks prevent any later resume of this retired track.
+    this.pausedUpstreams.delete(track);
+  };
 
   /**
    * Creates a new Publisher.
@@ -87,13 +123,31 @@ export class Publisher {
 
     this.workaroundRestartAudioInputTrackChrome(devices, this.scope);
 
-    this.connection.livekitRoom.localParticipant.on(
+    const localParticipant = this.connection.livekitRoom.localParticipant;
+    localParticipant.on(
       ParticipantEvent.LocalTrackPublished,
-      this.onLocalTrackPublished.bind(this),
+      this.onLocalTrackPublished,
+    );
+    localParticipant.on(
+      ParticipantEvent.LocalTrackUnpublished,
+      this.onLocalTrackUnpublished,
     );
   }
 
   public async destroy(): Promise<void> {
+    this.destroyed = true;
+    this.publishingRequested = false;
+    this.shouldPublish = false;
+    const localParticipant = this.connection.livekitRoom.localParticipant;
+    localParticipant.off(
+      ParticipantEvent.LocalTrackPublished,
+      this.onLocalTrackPublished,
+    );
+    localParticipant.off(
+      ParticipantEvent.LocalTrackUnpublished,
+      this.onLocalTrackUnpublished,
+    );
+    this.pausedUpstreams.clear();
     this.scope.end();
     this.logger.info("Scope ended -> unset handler");
     this.muteStates.audio.unsetHandler();
@@ -115,14 +169,16 @@ export class Publisher {
   // So for that we use pauseUpStream():  Stops sending media to the server by replacing
   // the sender track with null, but keeps the local MediaStreamTrack active.
   // The user can still see/hear themselves locally, but remote participants see nothing.
-  private onLocalTrackPublished(
+  private handleLocalTrackPublished(
     localTrackPublication: LocalTrackPublication,
   ): void {
+    if (this.destroyed) return;
     this.logger.info("Local track published", localTrackPublication);
     const lkRoom = this.connection.livekitRoom;
-    if (!this.shouldPublish) {
+    if (!this.publishingRequested || !this.shouldPublish) {
       this.logger.debug("Not publishing, pausing upstream");
       this.pauseUpstreams(lkRoom, [localTrackPublication.source]).catch((e) => {
+        this.publishingTransitionNeedsRetry = true;
         this.logger.error(`Failed to pause upstreams`, e);
       });
     }
@@ -212,87 +268,222 @@ export class Publisher {
     lkRoom: LivekitRoom,
     sources: Track.Source[],
   ): Promise<void> {
+    let firstError: unknown;
     for (const source of sources) {
+      if (this.destroyed) break;
       const track = lkRoom.localParticipant.getTrackPublication(source)?.track;
-      if (track) {
-        await track.pauseUpstream();
-      } else {
+      if (!track) {
         this.logger.warn(
           `No track found for source ${source} to pause upstream`,
         );
+        continue;
+      }
+      try {
+        await this.pauseUpstream(track);
+      } catch (error) {
+        firstError ??= error;
       }
     }
+    if (firstError) throw firstError;
+  }
+
+  private async pauseUpstream(track: LocalTrack): Promise<void> {
+    if (this.destroyed || !this.isCurrentTrack(track)) return;
+    const pendingOperation = this.upstreamOperations.get(track);
+    if (pendingOperation) {
+      await pendingOperation;
+      if (this.destroyed || !this.isCurrentTrack(track)) return;
+      if (!track.isUpstreamPaused) return this.pauseUpstream(track);
+      return;
+    }
+    if (this.destroyed || !this.isCurrentTrack(track)) return;
+    // A paused track may belong to another owner. Only resume tracks that this
+    // Publisher paused itself while reconciling its publishing state.
+    if (track.isUpstreamPaused) return;
+
+    this.pausedUpstreams.add(track);
+    const operation = track.pauseUpstream().then(
+      () => undefined,
+      (error: unknown) => {
+        // Retain ownership so the same desired state can retry this track.
+        throw error;
+      },
+    );
+    this.upstreamOperations.set(track, operation);
+    void operation.then(
+      () => this.clearUpstreamOperation(track, operation),
+      () => this.clearUpstreamOperation(track, operation),
+    );
+    await operation;
   }
 
   private async resumeUpstreams(
     lkRoom: LivekitRoom,
     sources: Track.Source[],
   ): Promise<void> {
+    let firstError: unknown;
+    const attemptedTracks = new Set<LocalTrack>();
+    const resume = async (track: LocalTrack): Promise<void> => {
+      attemptedTracks.add(track);
+      try {
+        await this.resumeUpstream(track);
+      } catch (error) {
+        firstError ??= error;
+      }
+    };
+
     for (const source of sources) {
       const track = lkRoom.localParticipant.getTrackPublication(source)?.track;
       if (track) {
-        await track.resumeUpstream();
+        await resume(track);
       } else {
         this.logger.warn(
           `No track found for source ${source} to resume upstream`,
         );
       }
     }
+
+    // A publication may arrive while one of the source operations is awaiting
+    // LiveKit. It is already owned by this Publisher, so converge on it before
+    // declaring the publishing transition complete. Do not immediately retry a
+    // failed track; a later same-state request will retry it.
+    while (!this.destroyed && this.publishingRequested) {
+      const pendingTracks = [...this.pausedUpstreams].filter((track) => {
+        if (!this.isCurrentTrack(track)) {
+          this.pausedUpstreams.delete(track);
+          return false;
+        }
+        return !attemptedTracks.has(track);
+      });
+      if (pendingTracks.length === 0) break;
+      for (const track of pendingTracks) await resume(track);
+    }
+    if (firstError) throw firstError;
   }
 
-  /**
-   *
-   * Request to publish local tracks to the LiveKit room.
-   * This will wait for the connection to be ready before publishing.
-   * Livekit also have some local retry logic for publishing tracks.
-   * Can be called multiple times, localparticipant manages the state of published tracks (or pending publications).
-   *
-   * @returns
-   */
-  public async startPublishing(): Promise<void> {
-    if (this.shouldPublish) {
-      this.logger.debug(`Already publishing, ignoring startPublishing call`);
+  private async resumeUpstream(track: LocalTrack): Promise<void> {
+    await this.upstreamOperations.get(track);
+    if (
+      this.destroyed ||
+      !this.publishingRequested ||
+      !this.pausedUpstreams.has(track) ||
+      !this.isCurrentTrack(track)
+    )
       return;
-    }
-    this.shouldPublish = true;
-    this.logger.debug("startPublishing called");
 
-    const lkRoom = this.connection.livekitRoom;
+    const operation = track.resumeUpstream().then(
+      () => {
+        this.pausedUpstreams.delete(track);
+      },
+      (error: unknown) => {
+        throw error;
+      },
+    );
+    this.upstreamOperations.set(track, operation);
+    void operation.then(
+      () => this.clearUpstreamOperation(track, operation),
+      () => this.clearUpstreamOperation(track, operation),
+    );
+    await operation;
+    if (this.destroyed || !this.isCurrentTrack(track)) return;
+    if (!this.publishingRequested && !track.isUpstreamPaused)
+      await this.pauseUpstream(track);
+  }
 
-    // Resume upstream for all publishable local tracks
-    // We need to call it explicitly because call setTrackEnabled does not always
-    // resume upstream. It will only if you switch the track from disabled to enabled,
-    // but if the track is already enabled but upstream is paused, it won't resume it.
-    try {
-      await this.resumeUpstreams(lkRoom, [
-        Track.Source.Microphone,
-        Track.Source.Camera,
-        Track.Source.ScreenShare,
-      ]);
-    } catch (e) {
-      this.logger.error(`Failed to resume upstreams`, e);
-    }
+  private clearUpstreamOperation(
+    track: LocalTrack,
+    operation: Promise<void>,
+  ): void {
+    if (this.upstreamOperations.get(track) === operation)
+      this.upstreamOperations.delete(track);
+  }
+
+  private isCurrentTrack(track: LocalTrack): boolean {
+    return (
+      this.connection.livekitRoom.localParticipant.getTrackPublication(
+        track.source,
+      )?.track === track
+    );
+  }
+
+  /** Reconcile the effective MatrixRTC publishing condition. */
+  public async setPublishingEnabled(enabled: boolean): Promise<void> {
+    if (this.destroyed) return;
+    this.publishingRequested = enabled;
+    if (this.publishingReconcile) return this.publishingReconcile;
+
+    this.publishingReconcile = this.reconcilePublishing().finally(() => {
+      this.publishingReconcile = undefined;
+    });
+    return this.publishingReconcile;
+  }
+
+  public async startPublishing(): Promise<void> {
+    await this.setPublishingEnabled(true);
   }
 
   public async stopPublishing(): Promise<void> {
+    await this.setPublishingEnabled(false);
+  }
+
+  private async reconcilePublishing(): Promise<void> {
+    while (true) {
+      if (this.destroyed) return;
+      const requested = this.publishingRequested;
+      if (
+        requested === this.shouldPublish &&
+        !this.publishingTransitionNeedsRetry
+      )
+        return;
+      this.publishingTransitionNeedsRetry = false;
+
+      if (requested) {
+        await this.startPublishingNow();
+      } else {
+        await this.stopPublishingNow();
+      }
+      if (this.publishingTransitionNeedsRetry) return;
+    }
+  }
+
+  private async startPublishingNow(): Promise<void> {
+    this.logger.debug("startPublishing called");
+
+    // Resume upstream for tracks this Publisher paused. We need to call it
+    // explicitly because setTrackEnabled does not always resume upstream.
+    try {
+      await this.resumeUpstreams(
+        this.connection.livekitRoom,
+        PUBLISHABLE_TRACK_SOURCES,
+      );
+    } catch (e) {
+      this.publishingTransitionNeedsRetry = true;
+      this.logger.error(`Failed to resume upstreams`, e);
+    }
+
+    // Do not publish after a disconnect raced the asynchronous resume.
+    if (this.publishingRequested && !this.destroyed) this.shouldPublish = true;
+  }
+
+  private async stopPublishingNow(): Promise<void> {
     this.logger.debug("stopPublishing called");
     this.shouldPublish = false;
     // Pause upstream will stop sending media to the server, while keeping
     // the local MediaStreamTrack active, so the user can still see themselves.
-    await this.pauseUpstreams(this.connection.livekitRoom, [
-      Track.Source.Microphone,
-      Track.Source.Camera,
-      Track.Source.ScreenShare,
-    ]);
+    try {
+      await this.pauseUpstreams(
+        this.connection.livekitRoom,
+        PUBLISHABLE_TRACK_SOURCES,
+      );
+    } catch (error) {
+      this.publishingTransitionNeedsRetry = true;
+      throw error;
+    }
   }
 
   public async stopTracks(): Promise<void> {
     const lkRoom = this.connection.livekitRoom;
-    for (const source of [
-      Track.Source.Microphone,
-      Track.Source.Camera,
-      Track.Source.ScreenShare,
-    ]) {
+    for (const source of PUBLISHABLE_TRACK_SOURCES) {
       const localPub = lkRoom.localParticipant.getTrackPublication(source);
       if (localPub?.track) {
         // stops and unpublishes the track
