@@ -100,11 +100,12 @@ vi.mock("livekit-client/e2ee-worker?worker");
 vi.mock("../e2ee/matrixKeyProvider");
 
 const getPlatform = vi.hoisted(() => vi.fn(() => "desktop"));
+const getIsFirefox = vi.hoisted(() => vi.fn(() => false));
 vi.mock("../../Platform", () => ({
   get platform(): string {
     return getPlatform();
   },
-  isFirefox: (): boolean => false,
+  isFirefox: (): boolean => getIsFirefox(),
 }));
 
 vi.mock(
@@ -1016,6 +1017,26 @@ describe.each(modes)("CallViewModel (%s mode)", (mode) => {
   );
 
   test("footer auto-hides after three seconds without interaction", () => {
+    withTestScheduler(({ expectObservable }) => {
+      withCallViewModel(
+        {
+          remoteParticipants$: constant([aliceParticipant]),
+          rtcMembers$: constant([localRtcMember, aliceRtcMember]),
+        },
+        (vm) => {
+          expectObservable(vm.showFooter$).toBe("t 2999ms f", {
+            t: true,
+            f: false,
+          });
+        },
+      );
+    });
+  });
+
+  test("footer auto-hides after three seconds on Firefox desktop", () => {
+    getIsFirefox.mockReturnValue(true);
+    onTestFinished(() => getIsFirefox.mockReturnValue(false));
+
     withTestScheduler(({ expectObservable }) => {
       withCallViewModel(
         {

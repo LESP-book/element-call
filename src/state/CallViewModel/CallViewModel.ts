@@ -67,7 +67,7 @@ import {
   MatrixRTCMode,
   type ResolvedDelayedLeaveTimings,
 } from "../../config/ConfigOptions";
-import { isFirefox, platform } from "../../Platform";
+import { platform } from "../../Platform";
 import { setPipEnabled$ } from "../../controls";
 import { TileStore } from "../TileStore";
 import { gridLikeLayout } from "../GridLikeLayout";
@@ -1542,9 +1542,6 @@ export function createCallViewModel$(
           // No controls are shown in mobile pip as interactions are disabled
           return of(false);
         }
-        // Firefox still needs the footer visible to avoid its known layering
-        // issue. Keep the mobile PiP exception above unchanged.
-        if (isFirefox()) return of(true);
         const showInitially = mode !== "flat";
         const timeout$ = timer(showFooterMs);
 
