@@ -33,10 +33,21 @@ Please see LICENSE in the repository root for full details.
 }
 
 .footer.overlay {
-  /* 显示时保持 sticky，让本地 PiP 为工具栏腾出空间。 */
+  /* 桌面端始终保持绝对悬浮，不改变原有视频区域高度。 */
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
   /* 将收起动画限制在工具栏区域内，避免它扩大通话页面滚动范围。 */
   overflow: clip;
   pointer-events: none;
+}
+
+/* 手机端显示工具栏时让它参与布局，本地 PiP 就会避开控制区。 */
+:global([data-element-call-root][data-platform="android"])
+  .footer.overlay:not(.hidden),
+:global([data-element-call-root][data-platform="ios"])
+  .footer.overlay:not(.hidden) {
+  position: sticky;
 }
 
 .footer.overlay .toolbar {
@@ -89,10 +100,6 @@ Please see LICENSE in the repository root for full details.
 
 .footer.overlay.hidden {
   display: flex;
-  /* 收起后才脱离布局，让视频区域恢复完整高度。 */
-  position: absolute;
-  inset-block-end: 0;
-  inset-inline: 0;
 }
 
 .footer.overlay.hidden .toolbar {
