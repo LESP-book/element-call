@@ -165,7 +165,7 @@ export function createCallFooterViewModel(
     showFooter$: callModel.showFooter$,
     hideControls$: constant(!showControls),
     showModals$: callModel.showModals$,
-    // 显示时由 sticky footer 为本地 PiP 留出空间，收起时 CSS 会脱离布局。
+    // 桌面端保持绝对悬浮；手机端显示时由 CSS 改为 sticky，避开本地 PiP。
     asOverlay$: constant(true),
     // Keep the upstream snapshot shape while retaining this fork's no-logo UI.
     showLogo$: constant(false),
