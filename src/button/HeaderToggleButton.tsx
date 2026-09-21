@@ -35,6 +35,7 @@ export const HeaderToggleButton: FC<HeaderToggleButtonProps> = ({
       <Tooltip label={label}>
         <IconButton
           aria-label={label}
+          aria-pressed={headerPinned}
           onClick={onToggle}
           className={styles.button}
         >

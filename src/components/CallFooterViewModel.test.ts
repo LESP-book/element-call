@@ -111,6 +111,19 @@ describe("createCallFooterViewModel", () => {
     expect(vm.buttonSize$.value).toBe("lg");
   });
 
+  it("keeps the restored logo snapshot field disabled in the custom footer", () => {
+    const vm = createCallFooterViewModel(
+      testScope(),
+      buildMinimalCallViewModel(gridLayout),
+      mockMuteStates(),
+      mockMediaDevices({}),
+      /* reactionIdentifier */ undefined,
+      { showControls: true, header: HeaderStyle.Standard },
+    );
+
+    expect(vm.showLogo$.value).toBe(false);
+  });
+
   it("keeps compact buttons in PiP", () => {
     platformMock.mockReturnValue("android");
 

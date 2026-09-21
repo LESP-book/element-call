@@ -134,6 +134,7 @@ export const LobbyView: FC<Props> = ({
         devices,
         openSettings,
         hangup,
+        false,
       ),
     );
     return (): void => {

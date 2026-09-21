@@ -9,7 +9,6 @@ import {
   type Participant,
   ParticipantEvent,
   type LocalParticipant,
-  type LocalTrack,
   type ScreenShareCaptureOptions,
   type TrackPublishOptions,
   RoomEvent,
@@ -217,8 +216,9 @@ export const createLocalMembership$ = ({
    */
   startTracks: () => void;
   /**
-   * This sets a inner state (shouldPublish) to true and instructs the js-sdk and livekit to keep the user
-   * connected to matrix and livekit.
+   * This records the user's join intent and instructs the js-sdk and LiveKit to
+   * keep the user connected to Matrix and LiveKit when the effective connection
+   * condition allows publishing.
    */
   requestJoinAndPublish: () => void;
   requestDisconnect: () => void;
@@ -455,29 +455,31 @@ export const createLocalMembership$ = ({
     },
   );
 
-  // Based on `connectRequested$` we start publishing tracks. (once they are there!)
-  scope.reconcile(
-    scope.behavior(combineLatest([publisher$, joinAndPublishRequested$])),
-    async ([publisher, shouldJoinAndPublish]) => {
-      // Get the current publishing state to avoid redundant calls.
-      const isPublishing = publisher?.shouldPublish === true;
-      if (shouldJoinAndPublish && !isPublishing) {
-        try {
-          await publisher?.startPublishing();
-        } catch (error) {
+  // Based on `connectRequested$` and the MatrixRTC connection, start publishing
+  // tracks once they are there. Publisher serializes the async track operations;
+  // this subscription must forward every latest connection state immediately so
+  // a disconnect is not queued behind a pending resume.
+  combineLatest([
+    publisher$,
+    joinAndPublishRequested$,
+    homeserverConnected.combined$,
+  ])
+    .pipe(scope.bind())
+    .subscribe(([publisher, shouldJoinAndPublish, [homeserverIsConnected]]) => {
+      const shouldPublish = shouldJoinAndPublish && homeserverIsConnected;
+      if (!publisher) return;
+      void Promise.resolve(publisher.setPublishingEnabled(shouldPublish)).catch(
+        (error) => {
           const message =
             error instanceof Error ? error.message : String(error);
-          setPublishError(new FailToStartLivekitConnection(message));
-        }
-      } else if (isPublishing) {
-        try {
-          await publisher?.stopPublishing();
-        } catch (error) {
-          setPublishError(new UnknownCallError(error as Error));
-        }
-      }
-    },
-  );
+          setPublishError(
+            shouldPublish
+              ? new FailToStartLivekitConnection(message)
+              : new UnknownCallError(error as Error),
+          );
+        },
+      );
+    });
 
   // STATE COMPUTATION
 
@@ -755,69 +757,6 @@ export const createLocalMembership$ = ({
       }
     },
   );
-
-  // Pause upstream of all local media tracks when we're disconnected from
-  // MatrixRTC, because it can be an unpleasant surprise for the app to say
-  // 'reconnecting' and yet still be transmitting your media to others.
-  // We use matrixConnected$ rather than reconnecting$ because we want to
-  // pause tracks during the initial joining sequence too until we're sure
-  // that our own media is displayed on screen.
-  // TODO refactor this based no livekitState$
-  const matrixRtcPausedTracks = new Set<LocalTrack>();
-  combineLatest([participant$, homeserverConnected.combined$])
-    .pipe(scope.bind())
-    .subscribe(([participant, [connected]]) => {
-      if (!participant) return;
-      const publications = participant.trackPublications.values();
-      if (!joinAndPublishRequested$.value) {
-        for (const p of publications) {
-          if (p.track) matrixRtcPausedTracks.delete(p.track);
-        }
-        return;
-      }
-
-      if (connected) {
-        for (const p of publications) {
-          if (
-            p.track?.isUpstreamPaused === true &&
-            matrixRtcPausedTracks.has(p.track)
-          ) {
-            const track = p.track;
-            const kind = track.kind;
-            logger.info(
-              `Resuming ${kind} track (MatrixRTC connection present)`,
-            );
-            track
-              .resumeUpstream()
-              .then(() => matrixRtcPausedTracks.delete(track))
-              .catch((e) =>
-                logger.error(
-                  `Failed to resume ${kind} track after MatrixRTC reconnection`,
-                  e,
-                ),
-              );
-          }
-        }
-      } else {
-        for (const p of publications) {
-          if (p.track?.isUpstreamPaused === false) {
-            const track = p.track;
-            const kind = track.kind;
-            logger.info(
-              `Pausing ${kind} track (uncertain MatrixRTC connection)`,
-            );
-            matrixRtcPausedTracks.add(track);
-            track.pauseUpstream().catch((e) => {
-              matrixRtcPausedTracks.delete(track);
-              logger.error(
-                `Failed to pause ${kind} track after entering uncertain MatrixRTC connection`,
-                e,
-              );
-            });
-          }
-        }
-      }
-    });
 
   /**
    * Whether the user is currently sharing their screen.

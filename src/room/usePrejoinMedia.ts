@@ -63,7 +63,11 @@ export function usePrejoinMedia(
     () => ({
       // Audio is opened with video so the browser shows one permission prompt.
       // Clone the options because LiveKit mutates the object it receives.
-      audio: shouldPrepare && Object.assign({}, initialAudioOptions),
+      audio:
+        shouldPrepare &&
+        (initialAudioOptions === false && onlyWhenEnabled
+          ? false
+          : Object.assign({}, initialAudioOptions)),
       video: shouldPrepare &&
         videoEnabled && {
           deviceId: videoInputId,
@@ -73,6 +77,7 @@ export function usePrejoinMedia(
     [
       initialAudioOptions,
       initialProcessor,
+      onlyWhenEnabled,
       shouldPrepare,
       videoEnabled,
       videoInputId,

@@ -35,6 +35,8 @@ export function gridLikeLayout(
     update.registerSpotlight(
       media.spotlight,
       media.type === "spotlight-portrait",
+      "solid",
+      media.spotlightMedia,
     );
   for (const mediaVm of media.grid) update.registerGridTile(mediaVm);
   const tiles = update.build();

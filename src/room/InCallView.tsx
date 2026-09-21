@@ -685,13 +685,12 @@ export const InCallView: FC<InCallViewProps> = ({
       onPointerLeave={onPointerLeave}
     >
       {header}
-      {headerStyle === HeaderStyle.Standard &&
-        layout.type !== "pip" && (
-          <HeaderToggleButton
-            headerPinned={headerPinned}
-            onToggle={vm.toggleHeaderPinned}
-          />
-        )}
+      {headerStyle === HeaderStyle.Standard && layout.type !== "pip" && (
+        <HeaderToggleButton
+          headerPinned={headerPinned}
+          onToggle={vm.toggleHeaderPinned}
+        />
+      )}
       {audioParticipants.map(({ livekitRoom, url, participants }) => (
         <LivekitRoomAudioRenderer
           key={url}

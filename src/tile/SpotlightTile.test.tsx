@@ -95,6 +95,42 @@ test("SpotlightTile is accessible", async () => {
   expect(toggleExpanded).toHaveBeenCalled();
 });
 
+test("SpotlightTile falls back to the camera when its share stops", () => {
+  const camera = mockRemoteMedia(
+    mockRtcMembership("@alice:example.org", "AAAA"),
+    {},
+    mockRemoteParticipant({}),
+  );
+  const share = mockRemoteScreenShare(
+    mockRtcMembership("@alice:example.org", "AAAA"),
+    {},
+    mockRemoteParticipant({}),
+  );
+  const media$ = new BehaviorSubject([share, camera]);
+
+  const { container } = render(
+    <SpotlightTile
+      vm={
+        new SpotlightTileViewModel(media$, constant(false), constant("solid"))
+      }
+      targetWidth={300}
+      targetHeight={200}
+      expanded={false}
+      onToggleExpanded={null}
+      showIndicators
+      showNameTags
+      showRingingStatus
+      focusable
+    />,
+  );
+
+  const cameraItem = container.querySelector(`[data-id="${camera.id}"]`)!;
+  expect(cameraItem).toHaveAttribute("aria-hidden", "true");
+
+  act(() => media$.next([camera]));
+  expect(cameraItem).not.toHaveAttribute("aria-hidden", "true");
+});
+
 test("Screen share volume UI is shown when screen share has audio", async () => {
   const vm = mockRemoteScreenShare(
     mockRtcMembership("@alice:example.org", "AAAA"),

@@ -23,7 +23,12 @@ export function spotlightExpandedLayout(
   prevTiles: TileStore,
 ): [SpotlightExpandedLayout, TileStore] {
   const update = prevTiles.from(1);
-  update.registerSpotlight(media.spotlight, true, "transparent");
+  update.registerSpotlight(
+    media.spotlight,
+    true,
+    "transparent",
+    media.spotlightMedia,
+  );
   if (media.pip !== undefined) update.registerPipTile(media.pip);
   const tiles = update.build();
 

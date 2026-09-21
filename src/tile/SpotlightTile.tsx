@@ -422,10 +422,20 @@ export const SpotlightTile: FC<Props> = ({
   const background = useBehavior(vm.background$);
   const media = useBehavior(vm.media$);
   const [visibleId, setVisibleId] = useState<string | undefined>(media[0]?.id);
+  const activeVisibleId = media.some((item) => item.id === visibleId)
+    ? visibleId
+    : media[0]?.id;
   const latestMedia = useLatest(media);
-  const latestVisibleId = useLatest(visibleId);
-  const visibleIndex = media.findIndex((vm) => vm.id === visibleId);
+  const latestVisibleId = useLatest(activeVisibleId);
+  const visibleIndex = media.findIndex((vm) => vm.id === activeVisibleId);
   const visibleMedia = media.at(visibleIndex);
+
+  // A screen share can disappear while its camera remains in the carousel.
+  // Keep the fallback synchronous for rendering and update the state used by
+  // the observer/buttons so the removed share cannot remain selected.
+  useEffect(() => {
+    if (visibleId !== activeVisibleId) setVisibleId(activeVisibleId);
+  }, [activeVisibleId, visibleId]);
   const canGoBack = visibleIndex > 0;
   const canGoToNext = visibleIndex !== -1 && visibleIndex < media.length - 1;
 
@@ -530,7 +540,7 @@ export const SpotlightTile: FC<Props> = ({
             // that we want to bring into view
             snap={scrollToId === null || scrollToId === vm.id}
             className={itemClassName}
-            aria-hidden={(scrollToId ?? visibleId) !== vm.id}
+            aria-hidden={(scrollToId ?? activeVisibleId) !== vm.id}
           />
         ))}
       </div>
@@ -584,7 +594,7 @@ export const SpotlightTile: FC<Props> = ({
               data-testid="screenshare-indicator"
               key={vm.id}
               className={styles.item}
-              data-visible={vm.id === visibleId}
+              data-visible={vm.id === activeVisibleId}
             />
           ))}
         </div>

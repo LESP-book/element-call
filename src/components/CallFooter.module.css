@@ -117,7 +117,7 @@ Please see LICENSE in the repository root for full details.
   flex-wrap: nowrap;
 }
 
-.debug {
+.logo {
   justify-self: start;
   display: flex;
   align-items: center;
@@ -137,9 +137,9 @@ Please see LICENSE in the repository root for full details.
   justify-self: end;
 }
 
-/* 窄屏下隐藏仅供诊断使用的布局信息。 */
+/* First hide the logo and diagnostics in narrow containers. */
 @container element-call (max-width: 750px) {
-  .debug {
+  .logo {
     display: none;
   }
 }

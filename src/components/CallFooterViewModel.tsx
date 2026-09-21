@@ -167,6 +167,8 @@ export function createCallFooterViewModel(
     showModals$: callModel.showModals$,
     // 显示时由 sticky footer 为本地 PiP 留出空间，收起时 CSS 会脱离布局。
     asOverlay$: constant(true),
+    // Keep the upstream snapshot shape while retaining this fork's no-logo UI.
+    showLogo$: constant(false),
     notifyControlInteraction$: constant(callModel.tapControls),
     buttonSize$: scope.behavior(
       isPip$.pipe(map<boolean, "md" | "lg">((pip) => (pip ? "md" : "lg"))),
@@ -230,6 +232,7 @@ export function createCallFooterViewModel(
  * @param mediaDevices - Available and selected input devices.
  * @param openSettings - Callback to open the settings modal, or undefined.
  * @param hangup - Callback to leave/cancel, or undefined (hides the button).
+ * @param showLogo - Whether to show the Element Call logo.
  */
 export function createLobbyFooterViewModel(
   scope: ObservableScope,
@@ -237,6 +240,7 @@ export function createLobbyFooterViewModel(
   mediaDevices: MediaDevices,
   openSettings: (() => void) | undefined,
   hangup: (() => void) | undefined,
+  showLogo: boolean,
 ): ViewModel<FooterSnapshot> {
   return {
     ...createStaticViewModel({
@@ -244,6 +248,7 @@ export function createLobbyFooterViewModel(
       // The view model will then have less keys.
       // But as soon as we call `useViewModel` and convert back to a snapshot the missing props will
       // be correcty matching the snapshot type.
+      showLogo,
       hideControls: false,
       asOverlay: false,
       showModals: true,

@@ -67,7 +67,7 @@ import {
   MatrixRTCMode,
   type ResolvedDelayedLeaveTimings,
 } from "../../config/ConfigOptions";
-import { platform } from "../../Platform";
+import { isFirefox, platform } from "../../Platform";
 import { setPipEnabled$ } from "../../controls";
 import { TileStore } from "../TileStore";
 import { gridLikeLayout } from "../GridLikeLayout";
@@ -344,11 +344,6 @@ export interface CallViewModel {
    * This sends a termination event to the room, causing all participants to leave.
    */
   terminateCall: () => Promise<void>;
-  /**
-   * Observable that emits when the call is terminated by another participant.
-   */
-  terminated$: Observable<TerminationEvent>;
-
   // joining
   join: () => void;
 
@@ -1102,22 +1097,34 @@ export function createCallViewModel$(
   );
 
   const spotlightAndPip$ = scope.behavior<{
+    /** Media that determines layout and screen-share state. */
     spotlight: MediaViewModel[];
+    /** Media rendered by the spotlight carousel. */
+    spotlightMedia: MediaViewModel[];
     pip$: Observable<UserMediaViewModel | undefined>;
   }>(
     ringingMedia$.pipe(
       switchMap((ringingMedia) => {
         if (ringingMedia !== null)
-          return of({ spotlight: [ringingMedia], pip$: localUserMediaForPip$ });
+          return of({
+            spotlight: [ringingMedia],
+            spotlightMedia: [ringingMedia],
+            pip$: localUserMediaForPip$,
+          });
 
-        return screenShares$.pipe(
-          switchMap((screenShares) => {
+        return combineLatest([screenShares$, userMedia$]).pipe(
+          switchMap(([screenShares, userMedia]) => {
             if (screenShares.length > 0)
-              return of({ spotlight: screenShares, pip$: spotlightSpeaker$ });
+              return of({
+                spotlight: screenShares,
+                spotlightMedia: spotlightCarouselMedia(userMedia, screenShares),
+                pip$: spotlightSpeaker$,
+              });
 
             return spotlightSpeaker$.pipe(
               map((speaker) => ({
                 spotlight: speaker ? [speaker] : [],
+                spotlightMedia: speaker ? [speaker] : [],
                 // Hide PiP if redundant (i.e. if local user is already in spotlight)
                 pip$: localUserMediaForPip$.pipe(
                   map((m) => (m === speaker ? undefined : m)),
@@ -1133,6 +1140,13 @@ export function createCallViewModel$(
   const spotlight$ = scope.behavior<MediaViewModel[]>(
     spotlightAndPip$.pipe(
       map(({ spotlight }) => spotlight),
+      distinctUntilChanged<MediaViewModel[]>(shallowArrayEquals),
+    ),
+  );
+
+  const spotlightMedia$ = scope.behavior<MediaViewModel[]>(
+    spotlightAndPip$.pipe(
+      map(({ spotlightMedia }) => spotlightMedia),
       distinctUntilChanged<MediaViewModel[]>(shallowArrayEquals),
     ),
   );
@@ -1186,12 +1200,15 @@ export function createCallViewModel$(
   );
 
   const gridLayoutMedia$: Observable<GridLayoutMedia> = combineLatest(
-    [grid$, spotlight$],
-    (grid, spotlight) => ({
+    [grid$, spotlight$, spotlightMedia$],
+    (grid, spotlight, spotlightMedia) => ({
       type: "grid",
       edgeToEdge: false,
       spotlight: spotlight.some((vm) => vm.type === "screen share")
         ? spotlight
+        : undefined,
+      spotlightMedia: spotlight.some((vm) => vm.type === "screen share")
+        ? spotlightMedia
         : undefined,
       grid,
     }),
@@ -1200,31 +1217,40 @@ export function createCallViewModel$(
   const spotlightLandscapeLayoutMedia$ = (
     edgeToEdge: boolean,
   ): Observable<SpotlightLandscapeLayoutMedia> =>
-    combineLatest([grid$, spotlight$], (grid, spotlight) => ({
-      type: "spotlight-landscape",
-      edgeToEdge,
-      spotlight,
-      grid,
-    }));
+    combineLatest(
+      [grid$, spotlight$, spotlightMedia$],
+      (grid, spotlight, spotlightMedia) => ({
+        type: "spotlight-landscape",
+        edgeToEdge,
+        spotlight,
+        spotlightMedia,
+        grid,
+      }),
+    );
 
   const spotlightPortraitLayoutMedia$: Observable<SpotlightPortraitLayoutMedia> =
-    combineLatest([grid$, spotlight$], (grid, spotlight) => ({
-      type: "spotlight-portrait",
-      edgeToEdge: false,
-      spotlight,
-      grid,
-    }));
+    combineLatest(
+      [grid$, spotlight$, spotlightMedia$],
+      (grid, spotlight, spotlightMedia) => ({
+        type: "spotlight-portrait",
+        edgeToEdge: false,
+        spotlight,
+        spotlightMedia,
+        grid,
+      }),
+    );
 
   const spotlightExpandedLayoutMedia$ = (
     edgeToEdge: boolean,
   ): Observable<SpotlightExpandedLayoutMedia> =>
     spotlightAndPip$.pipe(
-      switchMap(({ spotlight, pip$ }) =>
+      switchMap(({ spotlight, spotlightMedia, pip$ }) =>
         pip$.pipe(
           map((pip) => ({
             type: "spotlight-expanded" as const,
             edgeToEdge,
             spotlight,
+            spotlightMedia,
             pip: pip ?? undefined,
           })),
         ),
@@ -1307,12 +1333,14 @@ export function createCallViewModel$(
       }),
     );
 
-  const pipLayoutMedia$: Observable<LayoutMedia> = spotlight$.pipe(
-    map((spotlight) => ({
+  const pipLayoutMedia$: Observable<LayoutMedia> = combineLatest(
+    [spotlight$, spotlightMedia$],
+    (spotlight, spotlightMedia) => ({
       type: "pip",
       edgeToEdge: platform !== "desktop",
       spotlight,
-    })),
+      spotlightMedia,
+    }),
   );
 
   spotlight$
@@ -1514,6 +1542,9 @@ export function createCallViewModel$(
           // No controls are shown in mobile pip as interactions are disabled
           return of(false);
         }
+        // Firefox still needs the footer visible to avoid its known layering
+        // issue. Keep the mobile PiP exception above unchanged.
+        if (isFirefox()) return of(true);
         const showInitially = mode !== "flat";
         const timeout$ = timer(showFooterMs);
 
@@ -1915,7 +1946,6 @@ export function createCallViewModel$(
         userHangup$.next();
       }
     },
-    terminated$: termination$,
     join: localMembership.requestJoinAndPublish,
     leave: localMembership.requestDisconnect,
     toggleScreenSharing: toggleScreenSharing,
@@ -1997,6 +2027,28 @@ export function createCallViewModel$(
     screenShareError$: localMembership.screenShareError$,
     dismissScreenShareError: localMembership.dismissScreenShareError,
   };
+}
+
+function spotlightCarouselMedia(
+  userMedia: UserMediaViewModel[],
+  screenShares: ScreenShareViewModel[],
+): MediaViewModel[] {
+  const userMediaById = new Map(userMedia.map((media) => [media.id, media]));
+  const screenShareSuffix = ":screen-share";
+
+  return screenShares.flatMap((screenShare) => {
+    // Screen-share ids are derived from the exact user-media id. Requiring both
+    // the id and user id keeps a share paired with its participant/device
+    // instead of accidentally selecting another device for the same user.
+    const cameraId = screenShare.id.endsWith(screenShareSuffix)
+      ? screenShare.id.slice(0, -screenShareSuffix.length)
+      : undefined;
+    const camera =
+      cameraId === undefined ? undefined : userMediaById.get(cameraId);
+    return camera?.userId === screenShare.userId
+      ? [screenShare, camera]
+      : [screenShare];
+  });
 }
 
 function getE2eeKeyProvider(
